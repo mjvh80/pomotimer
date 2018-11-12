@@ -8,3 +8,5 @@ A simple "pomodoro" timer with some logic that suits my needs.
 
 
 Screenshot:
+
+![Pomodoro Timer](/PomodoroTimer/screenshot.png)
