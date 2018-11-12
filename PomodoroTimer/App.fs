@@ -5,6 +5,7 @@ open System
 open System.Net
 open System.Threading
 open System.Windows
+open System.Windows.Input
 open System.Windows.Controls
 open System.Windows.Media
 open FSharpx
@@ -15,29 +16,15 @@ open System.Diagnostics
 
 type MainWindow = XAML<"MainWindow.xaml">
 
-type MainWindow2() =
-   inherit MainWindow()
-   override x.TimelineLoaded(timeline: obj, _) = 
-      match timeline with
-      | :? Control as timelineCtrl ->
-//         let first = timelineCtrl.Template.FindName("firstMinute", timelineCtrl)
-//         let x = first.GetType()
-         ()
-      | _ -> ()
-      ()
+// Info about break and work. WorkTimer times work done, BreakTimer times the current break.
+type BreakInfo = { WorkTimer: Stopwatch; BreakTimer: Stopwatch } with
+   static member FromDispatcherTimer(timer: System.Windows.Threading.DispatcherTimer) = timer.Tag :?> BreakInfo
 
 [<DllImport("user32.dll", SetLastError = true)>]
 extern bool LockWorkStation();
 
-//type MainWindow with
-//   member x.foo_click (a, b) = ()
-
-//type MainWindow() as this = 
-//   inherit MainWindowBase()
-//   override base.ont
-
-let window = MainWindow2()
-
+let window = MainWindow()
+let scroller = window.Root.FindName("TimelineScroller") :?> System.Windows.Controls.ScrollViewer
 
 // Allow window to be moved.
 let mutable dragCoords = new Windows.Point()
@@ -49,18 +36,38 @@ let getTimelineParts (window: MainWindow) =
       |> Seq.skipWhile (fun element -> not(Object.ReferenceEquals(element, firstPart)))
       |> Seq.cast<Control>
 
-
+// WPF timer to update our timer UI on the message loop.
 let dispatcherTimer = new System.Windows.Threading.DispatcherTimer()
-dispatcherTimer.Tag <- System.Diagnostics.Stopwatch.StartNew()
+dispatcherTimer.Tag <- box({ WorkTimer = Stopwatch.StartNew(); BreakTimer = new Stopwatch() })
 
-let startTimer() = dispatcherTimer.Start(); (dispatcherTimer.Tag :?> Stopwatch).Restart()
-let stopTimer() = dispatcherTimer.Stop()
+// Protect against locking out the user in case of bugs, don't lock if control is down.
+let doActualWorkStationLock() =
+   if not(Keyboard.IsKeyDown(Key.RightCtrl)) then 
+      LockWorkStation() |> ignore // todo handle somehow?
+
+// Take a break, stops the dispatch timer and locks the current computer.
+let takeBreak() = 
+   dispatcherTimer.Stop()
+   // let the work timer continue, in case the break is too short
+   BreakInfo.FromDispatcherTimer(dispatcherTimer).BreakTimer.Restart()
+   doActualWorkStationLock()
+
+// Start work, resets work timer if the break was long enough.
+// Todo: if the break is too short after 25 minutes, the workstation will lock in a "loop"
+let startWork() =
+   let breakInfo = BreakInfo.FromDispatcherTimer(dispatcherTimer)
+   let breakTimeInMinutes = if breakInfo.BreakTimer = null then 0.0 else breakInfo.BreakTimer.Elapsed.TotalMinutes
+   if (breakTimeInMinutes < 5.) then
+      // break is too short, so we don't touch the timer
+      ()
+   else
+      breakInfo.WorkTimer.Restart()
+      scroller.ScrollToHorizontalOffset(0.0)
+
+   dispatcherTimer.Start()
 
 // Function to create the main application window, and hook it up.
 let createMainWindow  () = 
-  
-
-   let scroller = window.Root.FindName("TimelineScroller") :?> System.Windows.Controls.ScrollViewer
 
    // Initialize timer values in 5 minute intervals.
    let mutable minutes = 0;
@@ -84,18 +91,18 @@ let createMainWindow  () =
    dispatcherTimer.Interval <- new TimeSpan(0, 0, updateIntervalInSeconds);
 
    dispatcherTimer.Tick.Add(fun e ->
-      // Increment with one minute
       // Todo: let's get the 75 (width of spacer) somehow (translatepoint?)
-      let delta = ((scroller.ScrollableWidth + 75. ) / (float minutes)) / ( 60. / (float updateIntervalInSeconds))
+      let delta = ((scroller.ScrollableWidth + 75. ) / (float minutes)) / ( 60. / BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer.Elapsed.TotalSeconds)
       scroller.ScrollToHorizontalOffset(scroller.ContentHorizontalOffset + delta)
       
-      let hiresTimer = dispatcherTimer.Tag :?> Stopwatch
+      let hiresTimer = BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer
 
       // todo: make this configurable
-      if (hiresTimer.Elapsed.TotalMinutes > 25.) then LockWorkStation() |> ignore
+      if (hiresTimer.Elapsed.TotalMinutes > 25.0) then
+         takeBreak()
       )
    
-   startTimer()
+   startWork()
 
    // Set up window movement with mouse.
    window.Root.PreviewMouseDown.Add(fun e -> dragCoords <- e.GetPosition(window.Root); window.Root.CaptureMouse() |> ignore)
@@ -111,16 +118,14 @@ let createMainWindow  () =
    // Hook system events to respond to lock event.
    SystemEvents.SessionSwitch.Add(fun (args: SessionSwitchEventArgs) -> 
       match args.Reason with
-      | SessionSwitchReason.SessionLock
-      | SessionSwitchReason.SessionLogoff ->()
+      | SessionSwitchReason.SessionLock ->
+         takeBreak()
       
       | SessionSwitchReason.SessionLogon
       | SessionSwitchReason.SessionUnlock ->
          // For now, this'll get more complex prolly
          // todo: enforce a minumum pauze interval?
-         stopTimer()
-         scroller.ScrollToHorizontalOffset(0.0)
-         startTimer()
+         startWork()
 
       | _ -> ()
    )
