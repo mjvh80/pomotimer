@@ -9,4 +9,4 @@ A simple "pomodoro" timer with some logic that suits my needs.
 
 Screencast (sped up):
 
-![Pomodoro Timer](/PomodoroTimer/pomodoro.gif)
+![Pomodoro Timer](/pomodoro.gif)
