@@ -15,6 +15,7 @@ open System.Runtime.InteropServices
 open System.Diagnostics
 
 type MainWindow = XAML<"MainWindow.xaml">
+type Icon = XAML<"Icon.xaml">
 
 // Info about break and work. WorkTimer times work done, BreakTimer times the current break.
 type BreakInfo = { WorkTimer: Stopwatch; BreakTimer: Stopwatch } with
@@ -25,6 +26,11 @@ extern bool LockWorkStation();
 
 let window = MainWindow()
 let scroller = window.Root.FindName("TimelineScroller") :?> System.Windows.Controls.ScrollViewer
+
+let icon = new Icon()
+icon.ShowInTaskbar <- false
+icon.Left <- -10000. // offscreen
+icon.Show()
 
 // Allow window to be moved.
 let mutable dragCoords = new Windows.Point()
@@ -44,6 +50,13 @@ dispatcherTimer.Tag <- box({ WorkTimer = Stopwatch.StartNew(); BreakTimer = new 
 let doActualWorkStationLock() =
    if not(Keyboard.IsKeyDown(Key.RightCtrl)) then 
       LockWorkStation() |> ignore // todo handle somehow?
+
+// Sets the taskbar icon by rendering the Icon.xaml file to it.
+let updateWindowIcon(minutes: int) = 
+   let rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(icon.Width |> int, icon.Height |> int, 96., 96., PixelFormats.Pbgra32);
+   (icon.FindName("minutes") :?> Label).Content <- minutes.ToString() // fuck databinding
+   rtb.Render(icon)
+   window.Icon <- rtb
 
 // Take a break, stops the dispatch timer and locks the current computer.
 let takeBreak() = 
@@ -84,17 +97,16 @@ let createMainWindow  () =
       minutes <- minutes + 5
 
 
-   // Demonstrate scroller
-   
    // Update every 5s or so (10 is noticeable).
-   let updateIntervalInSeconds = 10
+   let updateIntervalInSeconds = 5
    dispatcherTimer.Interval <- new TimeSpan(0, 0, updateIntervalInSeconds);
 
    dispatcherTimer.Tick.Add(fun e ->
-      // Todo: let's get the 75 (width of spacer) somehow (translatepoint?)
-      let delta = ((scroller.ScrollableWidth + 75. ) / (float minutes)) / ( 60. / BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer.Elapsed.TotalSeconds)
-      scroller.ScrollToHorizontalOffset(scroller.ContentHorizontalOffset + delta)
-      
+
+      let workTimer = BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer 
+      scroller.ScrollToHorizontalOffset((scroller.ScrollableWidth + 75. ) * (workTimer.Elapsed.TotalMinutes / (float minutes)))
+      updateWindowIcon(workTimer.Elapsed.TotalMinutes |> int)
+
       let hiresTimer = BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer
 
       // todo: make this configurable
@@ -103,6 +115,12 @@ let createMainWindow  () =
       )
    
    startWork()
+
+   // Always keep on top, even when everything is minimized (e.g. show desktop).
+   window.Root.StateChanged.Add(fun _ ->
+      if (window.Root.WindowState = WindowState.Minimized) then
+         window.Root.WindowState <- WindowState.Normal
+   )
 
    // Set up window movement with mouse.
    window.Root.PreviewMouseDown.Add(fun e -> dragCoords <- e.GetPosition(window.Root); window.Root.CaptureMouse() |> ignore)
@@ -130,6 +148,9 @@ let createMainWindow  () =
       | _ -> ()
    )
 
+   updateWindowIcon(0)
+
+   // Return.
    window.Root
 
 [<STAThread>]
