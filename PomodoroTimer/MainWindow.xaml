@@ -137,6 +137,17 @@ TriangleIndices="0 1 11  1 12 11  1 2 12  2 13 12  2 3 13  3 14 13  3 4 14  4 15
                     </CombinedGeometry>
                 </Ellipse.Clip>
             </Ellipse>
+
+            <!-- Glow effect, fake 3D ftw -->
+            <Ellipse Canvas.Left="32" Canvas.Top="20" StrokeThickness="10" Width="25" Height="15" Fill="#aaffffff">
+                <Ellipse.LayoutTransform>
+                    <RotateTransform Angle="-35" />
+                </Ellipse.LayoutTransform>
+                <Ellipse.BitmapEffect>
+                    <BlurBitmapEffect Radius="10" />
+                </Ellipse.BitmapEffect>
+            </Ellipse>
+
         </Canvas>
     </Border>
 
