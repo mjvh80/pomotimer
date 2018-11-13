@@ -61,7 +61,6 @@
     <Compile Include="App.fs" />
     <Content Include="packages.config" />
     <Resource Include="MainWindow.xaml" />
-    <None Include="Play.xaml" />
     <Resource Include="TimeLine.xaml" />
     <None Include="Generate3DEffect.cs" />
     <Resource Include="Icon.xaml" />
