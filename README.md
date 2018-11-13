@@ -9,4 +9,4 @@ A simple "pomodoro" timer with some logic that suits my needs.
 
 Screenshot:
 
-![Pomodoro Timer](/PomodoroTimer/screenshot.png)
+![Pomodoro Timer](/PomodoroTimer/screenshot.PNG)
