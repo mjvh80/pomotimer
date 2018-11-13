@@ -30,7 +30,7 @@ let scroller = window.Root.FindName("TimelineScroller") :?> System.Windows.Contr
 let icon = new Icon()
 icon.ShowInTaskbar <- false
 icon.Left <- -10000. // offscreen
-icon.Show()
+icon.Show() // required for rendering to image source to work
 
 // Allow window to be moved.
 let mutable dragCoords = new Windows.Point()
@@ -76,6 +76,7 @@ let startWork() =
    else
       breakInfo.WorkTimer.Restart()
       scroller.ScrollToHorizontalOffset(0.0)
+      updateWindowIcon(0)
 
    dispatcherTimer.Start()
 
@@ -148,7 +149,11 @@ let createMainWindow  () =
       | _ -> ()
    )
 
-   updateWindowIcon(0)
+   // Once loaded, show taskbar icon.
+   window.Loaded.Add(fun _ -> 
+      // Avoid the icon showing up as a separate window in e.g. alt+tab
+      icon.Owner <- window
+      updateWindowIcon(0))
 
    // Return.
    window.Root
