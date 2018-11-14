@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<Application   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--<JumpList.JumpList>
+        <JumpList>
+            <JumpTask Title="aoeuaouaou" Description="foo" ApplicationPath="PomodoroTimer.exe" />
+        </JumpList>
+    </JumpList.JumpList>-->
+    
+    
+    
+</Application>

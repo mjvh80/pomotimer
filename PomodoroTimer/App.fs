@@ -6,14 +6,17 @@ open System.Net
 open System.Threading
 open System.Windows
 open System.Windows.Input
+open System.Windows.Interop
 open System.Windows.Controls
 open System.Windows.Media
+open System.Windows.Shell
 open FSharpx
 open Microsoft.Win32
 open FsXaml
 open System.Runtime.InteropServices
 open System.Diagnostics
 
+type Application = XAML<"Application.xaml">
 type MainWindow = XAML<"MainWindow.xaml">
 type Icon = XAML<"Icon.xaml">
 
@@ -21,8 +24,14 @@ type Icon = XAML<"Icon.xaml">
 type BreakInfo = { WorkTimer: Stopwatch; BreakTimer: Stopwatch } with
    static member FromDispatcherTimer(timer: System.Windows.Threading.DispatcherTimer) = timer.Tag :?> BreakInfo
 
+type WindowsMsg = 
+   | Reset = 0x0401 // rename to restart todo
+
 [<DllImport("user32.dll", SetLastError = true)>]
 extern bool LockWorkStation();
+
+[<DllImport("user32.dll", SetLastError = true)>]
+extern nativeint SendMessage(nativeint hWnd, int Msg, nativeint wParam, nativeint lParam);
 
 let window = MainWindow()
 let scroller = window.Root.FindName("TimelineScroller") :?> System.Windows.Controls.ScrollViewer
@@ -58,6 +67,10 @@ let updateWindowIcon(minutes: int) =
    rtb.Render(icon)
    window.Icon <- rtb
 
+let resetTimer() =
+   BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer.Restart()
+   scroller.ScrollToHorizontalOffset(0.0)
+
 // Take a break, stops the dispatch timer and locks the current computer.
 let takeBreak() = 
    dispatcherTimer.Stop()
@@ -81,7 +94,7 @@ let startWork() =
    dispatcherTimer.Start()
 
 // Function to create the main application window, and hook it up.
-let createMainWindow  () = 
+let createMainWindow  (application) = 
 
    // Initialize timer values in 5 minute intervals.
    let mutable minutes = 0;
@@ -149,15 +162,62 @@ let createMainWindow  () =
       | _ -> ()
    )
 
-   // Once loaded, show taskbar icon.
+   // Once loaded, show taskbar icon and hook windows messages.
    window.Loaded.Add(fun _ -> 
       // Avoid the icon showing up as a separate window in e.g. alt+tab
       icon.Owner <- window
-      updateWindowIcon(0))
+      updateWindowIcon(0)
+
+      // Hook the win proc for processing remote commands.
+      let hwndSrc = PresentationSource.FromVisual(window) :?> HwndSource
+      hwndSrc.AddHook(new System.Windows.Interop.HwndSourceHook(fun handle -> fun msg -> fun wParam -> fun lParam -> fun handled -> 
+         handled <- true
+
+         match LanguagePrimitives.EnumOfValue<int, WindowsMsg>(msg) with
+         | WindowsMsg.Reset -> resetTimer()
+         | _ -> handled <- false
+      
+         IntPtr.Zero))
+
+      // Add the restart command to the jumplist.
+      // Initialize the jumplist. todo: add nice icon
+      let restartTask = new JumpTask()
+      restartTask.ApplicationPath <- System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName
+      restartTask.Arguments <- "/restart " + (new WindowInteropHelper(window)).Handle.ToString()
+      restartTask.Title <- "Restart"
+      restartTask.Description <- "Restarts the current timer"
+
+      // note: it's possible to add to an existing jumplist defined in xaml, however, items appear to disappear
+      // after use (re-rendered?)
+      let jumpList = new JumpList() // JumpList.GetJumpList(application)
+      jumpList.JumpItems.Add(restartTask)
+      JumpList.SetJumpList(application, jumpList)
+      jumpList.Apply()
+      )
 
    // Return.
    window.Root
 
+
+type PomoApplication() =
+   inherit Application()
+   
+
+
+let application = new Application()
+let mainWindow = createMainWindow(application)
+
+// Add hook that checks for the /task command line, and sends a Windows message to the relevant instance if found, before quitting.
+application.Startup.Add(fun (args: StartupEventArgs) ->
+   (
+      if args.Args.Length >= 2 then
+         if (args.Args.[0] = "/restart") then
+            let targetWindow = args.Args.[1] |> Int32.Parse |> nativeint
+            let result = SendMessage(targetWindow, LanguagePrimitives.EnumToValue(WindowsMsg.Reset), IntPtr.Zero, IntPtr.Zero)
+            application.Shutdown()
+   )
+)
+
 [<STAThread>]
 [<EntryPoint>]
-(new Application()).Run(createMainWindow()) |> ignore
+application.Run(mainWindow) |> ignore

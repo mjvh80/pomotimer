@@ -64,6 +64,7 @@
     <Resource Include="TimeLine.xaml" />
     <None Include="Generate3DEffect.cs" />
     <Resource Include="Icon.xaml" />
+    <Resource Include="Application.xaml" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="FSharp.Core">
