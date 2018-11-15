@@ -16,23 +16,33 @@ open FsXaml
 open System.Runtime.InteropServices
 open System.Diagnostics
 
-type Application = XAML<"Application.xaml">
-type MainWindow = XAML<"MainWindow.xaml">
-type Icon = XAML<"Icon.xaml">
-
-// Info about break and work. WorkTimer times work done, BreakTimer times the current break.
-type BreakInfo = { WorkTimer: Stopwatch; BreakTimer: Stopwatch } with
-   static member FromDispatcherTimer(timer: System.Windows.Threading.DispatcherTimer) = timer.Tag :?> BreakInfo
-
-type WindowsMsg = 
-   | Reset = 0x0401 // rename to restart todo
-
+// Interop
 [<DllImport("user32.dll", SetLastError = true)>]
 extern bool LockWorkStation();
 
 [<DllImport("user32.dll", SetLastError = true)>]
 extern nativeint SendMessage(nativeint hWnd, int Msg, nativeint wParam, nativeint lParam);
+// End Interop
 
+type Application = XAML<"Application.xaml">
+type _MainWindow = XAML<"MainWindow.xaml">
+type Icon = XAML<"Icon.xaml">
+
+type WindowsMsg = 
+   | Reset = 0x0401 // rename to restart todo
+   | Quit = 0x0402
+
+type MainWindow() =
+   inherit _MainWindow()
+   member this.Handle with get() = (new WindowInteropHelper(this)).Handle
+   override this.ContextRestartClick(sender, args) = SendMessage(this.Handle, WindowsMsg.Reset |> int, IntPtr.Zero, IntPtr.Zero) |> ignore
+   override this.ContextQuitClick(sender, args) = SendMessage(this.Handle, WindowsMsg.Quit |> int, IntPtr.Zero, IntPtr.Zero) |> ignore
+
+// Info about break and work. WorkTimer times work done, BreakTimer times the current break.
+type BreakInfo = { WorkTimer: Stopwatch; BreakTimer: Stopwatch } with
+   static member FromDispatcherTimer(timer: System.Windows.Threading.DispatcherTimer) = timer.Tag :?> BreakInfo
+
+// Construct application etc.
 let window = MainWindow()
 let scroller = window.Root.FindName("TimelineScroller") :?> System.Windows.Controls.ScrollViewer
 
@@ -40,6 +50,20 @@ let icon = new Icon()
 icon.ShowInTaskbar <- false
 icon.Left <- -10000. // offscreen
 icon.Show() // required for rendering to image source to work
+
+let application = new Application()
+
+// Add hook that checks for the /restart command line, and sends a Windows message to the relevant instance if found, before quitting.
+application.Startup.Add(fun (args: StartupEventArgs) ->
+   (
+      if args.Args.Length >= 2 then
+         if (args.Args.[0] = "/restart") then
+            let targetWindow = args.Args.[1] |> Int32.Parse |> nativeint
+            let result = SendMessage(targetWindow, LanguagePrimitives.EnumToValue(WindowsMsg.Reset), IntPtr.Zero, IntPtr.Zero)
+            application.Shutdown()
+   )
+)
+
 
 // Allow window to be moved.
 let mutable dragCoords = new Windows.Point()
@@ -93,131 +117,112 @@ let startWork() =
 
    dispatcherTimer.Start()
 
-// Function to create the main application window, and hook it up.
-let createMainWindow  (application) = 
-
-   // Initialize timer values in 5 minute intervals.
-   let mutable minutes = 0;
-   let timelineParts = (getTimelineParts window) |> Seq.toArray
-   for i = 0 to (timelineParts.Length - 1) do
-      timelineParts.[i].ApplyTemplate() |> ignore
-      
-      let firstMinute = (timelineParts.[i].Template.FindName("firstMinute", timelineParts.[i])) :?> Label
-      firstMinute.Content <- minutes.ToString()
-      minutes <- minutes + 5
-
-      let secondMinute = (timelineParts.[i].Template.FindName("secondMinute", timelineParts.[i])) :?> Label
-      secondMinute.Content <- minutes.ToString()
-      minutes <- minutes + 5
 
 
-   // Update every 5s or so (10 is noticeable).
-   let updateIntervalInSeconds = 5
-   dispatcherTimer.Interval <- new TimeSpan(0, 0, updateIntervalInSeconds);
-
-   dispatcherTimer.Tick.Add(fun e ->
-
-      let workTimer = BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer 
-      scroller.ScrollToHorizontalOffset((scroller.ScrollableWidth + 75. ) * (workTimer.Elapsed.TotalMinutes / (float minutes)))
-      updateWindowIcon(workTimer.Elapsed.TotalMinutes |> int)
-
-      let hiresTimer = BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer
-
-      // todo: make this configurable
-      if (hiresTimer.Elapsed.TotalMinutes > 25.0) then
-         takeBreak()
-      )
+// Initialize timer values in 5 minute intervals.
+let mutable minutes = 0;
+let timelineParts = (getTimelineParts window) |> Seq.toArray
+for i = 0 to (timelineParts.Length - 1) do
+   timelineParts.[i].ApplyTemplate() |> ignore
    
-   startWork()
+   let firstMinute = (timelineParts.[i].Template.FindName("firstMinute", timelineParts.[i])) :?> Label
+   firstMinute.Content <- minutes.ToString()
+   minutes <- minutes + 5
 
-   // Always keep on top, even when everything is minimized (e.g. show desktop).
-   window.Root.StateChanged.Add(fun _ ->
-      if (window.Root.WindowState = WindowState.Minimized) then
-         window.Root.WindowState <- WindowState.Normal
+   let secondMinute = (timelineParts.[i].Template.FindName("secondMinute", timelineParts.[i])) :?> Label
+   secondMinute.Content <- minutes.ToString()
+   minutes <- minutes + 5
+
+
+// Update every 5s or so (10 is noticeable).
+let updateIntervalInSeconds = 5
+dispatcherTimer.Interval <- new TimeSpan(0, 0, updateIntervalInSeconds);
+
+dispatcherTimer.Tick.Add(fun e ->
+
+   let workTimer = BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer 
+   scroller.ScrollToHorizontalOffset((scroller.ScrollableWidth + 75. ) * (workTimer.Elapsed.TotalMinutes / (float minutes)))
+   updateWindowIcon(workTimer.Elapsed.TotalMinutes |> int)
+
+   let hiresTimer = BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer
+
+   // todo: make this configurable
+   if (hiresTimer.Elapsed.TotalMinutes > 25.0) then
+      takeBreak()
    )
 
-   // Set up window movement with mouse.
-   window.Root.PreviewMouseDown.Add(fun e -> dragCoords <- e.GetPosition(window.Root); window.Root.CaptureMouse() |> ignore)
-   window.Root.PreviewMouseUp.Add(fun _ ->  window.Root.ReleaseMouseCapture())
-   window.Root.PreviewMouseMove.Add(fun e -> if Input.Mouse.LeftButton = Input.MouseButtonState.Released then
-                                                    window.Root.ReleaseMouseCapture()
-                                                  else if window.Root.IsMouseCaptured then
-                                                    let p = e.GetPosition(window.Root)
-                                                    let dx, dy = p.X - dragCoords.X, p.Y - dragCoords.Y
-                                                    window.Root.Left <- window.Root.Left + dx
-                                                    window.Root.Top <- window.Root.Top + dy)
+startWork()
 
-   // Hook system events to respond to lock event.
-   SystemEvents.SessionSwitch.Add(fun (args: SessionSwitchEventArgs) -> 
-      match args.Reason with
-      | SessionSwitchReason.SessionLock ->
-         takeBreak()
-      
-      | SessionSwitchReason.SessionLogon
-      | SessionSwitchReason.SessionUnlock ->
-         // For now, this'll get more complex prolly
-         // todo: enforce a minumum pauze interval?
-         startWork()
-
-      | _ -> ()
-   )
-
-   // Once loaded, show taskbar icon and hook windows messages.
-   window.Loaded.Add(fun _ -> 
-      // Avoid the icon showing up as a separate window in e.g. alt+tab
-      icon.Owner <- window
-      updateWindowIcon(0)
-
-      // Hook the win proc for processing remote commands.
-      let hwndSrc = PresentationSource.FromVisual(window) :?> HwndSource
-      hwndSrc.AddHook(new System.Windows.Interop.HwndSourceHook(fun handle -> fun msg -> fun wParam -> fun lParam -> fun handled -> 
-         handled <- true
-
-         match LanguagePrimitives.EnumOfValue<int, WindowsMsg>(msg) with
-         | WindowsMsg.Reset -> resetTimer()
-         | _ -> handled <- false
-      
-         IntPtr.Zero))
-
-      // Add the restart command to the jumplist.
-      // Initialize the jumplist. todo: add nice icon
-      let restartTask = new JumpTask()
-      restartTask.ApplicationPath <- System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName
-      restartTask.Arguments <- "/restart " + (new WindowInteropHelper(window)).Handle.ToString()
-      restartTask.Title <- "Restart"
-      restartTask.Description <- "Restarts the current timer"
-
-      // note: it's possible to add to an existing jumplist defined in xaml, however, items appear to disappear
-      // after use (re-rendered?)
-      let jumpList = new JumpList() // JumpList.GetJumpList(application)
-      jumpList.JumpItems.Add(restartTask)
-      JumpList.SetJumpList(application, jumpList)
-      jumpList.Apply()
-      )
-
-   // Return.
-   window.Root
-
-
-type PomoApplication() =
-   inherit Application()
-   
-
-
-let application = new Application()
-let mainWindow = createMainWindow(application)
-
-// Add hook that checks for the /task command line, and sends a Windows message to the relevant instance if found, before quitting.
-application.Startup.Add(fun (args: StartupEventArgs) ->
-   (
-      if args.Args.Length >= 2 then
-         if (args.Args.[0] = "/restart") then
-            let targetWindow = args.Args.[1] |> Int32.Parse |> nativeint
-            let result = SendMessage(targetWindow, LanguagePrimitives.EnumToValue(WindowsMsg.Reset), IntPtr.Zero, IntPtr.Zero)
-            application.Shutdown()
-   )
+// Always keep on top, even when everything is minimized (e.g. show desktop).
+window.Root.StateChanged.Add(fun _ ->
+   if (window.Root.WindowState = WindowState.Minimized) then
+      window.Root.WindowState <- WindowState.Normal
 )
+
+// Set up window movement with mouse.
+window.Root.PreviewMouseDown.Add(fun e -> dragCoords <- e.GetPosition(window.Root); window.Root.CaptureMouse() |> ignore)
+window.Root.PreviewMouseUp.Add(fun _ ->  window.Root.ReleaseMouseCapture())
+window.Root.PreviewMouseMove.Add(fun e -> if Input.Mouse.LeftButton = Input.MouseButtonState.Released then
+                                                 window.Root.ReleaseMouseCapture()
+                                               else if window.Root.IsMouseCaptured then
+                                                 let p = e.GetPosition(window.Root)
+                                                 let dx, dy = p.X - dragCoords.X, p.Y - dragCoords.Y
+                                                 window.Root.Left <- window.Root.Left + dx
+                                                 window.Root.Top <- window.Root.Top + dy)
+
+// Hook system events to respond to lock event.
+SystemEvents.SessionSwitch.Add(fun (args: SessionSwitchEventArgs) -> 
+   match args.Reason with
+   | SessionSwitchReason.SessionLock ->
+      takeBreak()
+   
+   | SessionSwitchReason.SessionLogon
+   | SessionSwitchReason.SessionUnlock ->
+      // For now, this'll get more complex prolly
+      // todo: enforce a minumum pauze interval?
+      startWork()
+
+   | _ -> ()
+)
+
+// Once loaded, show taskbar icon and hook windows messages.
+window.Loaded.Add(fun _ -> 
+   // Avoid the icon showing up as a separate window in e.g. alt+tab
+   icon.Owner <- window
+   updateWindowIcon(0)
+
+   // Hook the win proc for processing remote commands.
+   let hwndSrc = PresentationSource.FromVisual(window) :?> HwndSource
+   hwndSrc.AddHook(new System.Windows.Interop.HwndSourceHook(fun handle -> fun msg -> fun wParam -> fun lParam -> fun handled -> 
+      handled <- true
+
+      match LanguagePrimitives.EnumOfValue<int, WindowsMsg>(msg) with
+      | WindowsMsg.Reset -> resetTimer()
+      | WindowsMsg.Quit -> application.Shutdown()
+      | _ -> handled <- false
+   
+      IntPtr.Zero))
+
+   // Add the restart command to the jumplist.
+   // Initialize the jumplist. todo: add nice icon
+   let restartTask = new JumpTask()
+   restartTask.ApplicationPath <- System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName
+   restartTask.Arguments <- "/restart " + window.Handle.ToString()
+   restartTask.Title <- "Restart"
+   restartTask.Description <- "Restarts the current timer"
+   restartTask.IconResourcePath <- restartTask.ApplicationPath
+   restartTask.IconResourceIndex <- 1
+
+   // note: it's possible to add to an existing jumplist defined in xaml, however, items appear to disappear
+   // after use (re-rendered?)
+   let jumpList = new JumpList() // JumpList.GetJumpList(application)
+   jumpList.JumpItems.Add(restartTask)
+   JumpList.SetJumpList(application, jumpList)
+   jumpList.Apply()
+
+   )
+
 
 [<STAThread>]
 [<EntryPoint>]
-application.Run(mainWindow) |> ignore
+application.Run(window) |> ignore

@@ -37,6 +37,22 @@
         </ControlTemplate>
     </Window.Resources>
 
+    <Window.ContextMenu>
+        <ContextMenu>
+            <MenuItem Header="Restart" Click="ContextRestartClick">
+                <MenuItem.Icon>
+                    <Image Source="pack://application:,,,/resources/restart.ico" />
+                </MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="Quit" Click="ContextQuitClick">
+                <MenuItem.Icon>
+                    <Image Source="pack://application:,,,/resources/quit.ico" />
+                </MenuItem.Icon>
+            </MenuItem>
+        </ContextMenu>
+    </Window.ContextMenu>
+
     <Border Name="windowBorder" CornerRadius="75" Width="150" Height="150">
         <!-- Add gradient for a bit of a sphere illusion. -->
         <Border.Background>

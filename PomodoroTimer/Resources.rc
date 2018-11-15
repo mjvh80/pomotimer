@@ -1,0 +1,9 @@
+
+// To update icons run rc.exe to re-generate the resources.res file which is the main resource file for the application
+// and defines the application icon.
+// This is not currently automated.
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+1               ICON                    "resources\\exeicon.ico"
+2               ICON                    "resources\\restart_inverted.ico"
