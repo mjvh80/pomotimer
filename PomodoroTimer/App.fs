@@ -91,9 +91,6 @@ let updateWindowIcon(minutes: int) =
    rtb.Render(icon)
    window.Icon <- rtb
 
-let resetTimer() =
-   BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer.Restart()
-   scroller.ScrollToHorizontalOffset(0.0)
 
 // Take a break, stops the dispatch timer and locks the current computer.
 let takeBreak() = 
@@ -104,19 +101,18 @@ let takeBreak() =
 
 // Start work, resets work timer if the break was long enough.
 // Todo: if the break is too short after 25 minutes, the workstation will lock in a "loop"
-let startWork() =
+let startWork(ignoreBreak) =
    let breakInfo = BreakInfo.FromDispatcherTimer(dispatcherTimer)
    let breakTimeInMinutes = if breakInfo.BreakTimer = null then 0.0 else breakInfo.BreakTimer.Elapsed.TotalMinutes
-   if (breakTimeInMinutes < 5.) then
+   if not(ignoreBreak) && (breakTimeInMinutes < 5.) then
       // break is too short, so we don't touch the timer
       ()
    else
-      breakInfo.WorkTimer.Restart()
-      scroller.ScrollToHorizontalOffset(0.0)
+      BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer.Restart()
+      (scroller :?> Controls.ExtendedScrollViewer).OnRestart()
       updateWindowIcon(0)
 
    dispatcherTimer.Start()
-
 
 
 // Initialize timer values in 5 minute intervals.
@@ -142,7 +138,7 @@ dispatcherTimer.Tick.Add(fun e ->
 
    let workTimer = BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer 
    scroller.ScrollToHorizontalOffset((scroller.ScrollableWidth + 75. ) * (workTimer.Elapsed.TotalMinutes / (float minutes)))
-   updateWindowIcon(workTimer.Elapsed.TotalMinutes |> int)
+   updateWindowIcon(Math.Round(workTimer.Elapsed.TotalMinutes, 0) |> int)
 
    let hiresTimer = BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer
 
@@ -151,7 +147,7 @@ dispatcherTimer.Tick.Add(fun e ->
       takeBreak()
    )
 
-startWork()
+startWork(true)
 
 // Always keep on top, even when everything is minimized (e.g. show desktop).
 window.Root.StateChanged.Add(fun _ ->
@@ -180,7 +176,7 @@ SystemEvents.SessionSwitch.Add(fun (args: SessionSwitchEventArgs) ->
    | SessionSwitchReason.SessionUnlock ->
       // For now, this'll get more complex prolly
       // todo: enforce a minumum pauze interval?
-      startWork()
+      startWork false
 
    | _ -> ()
 )
@@ -197,7 +193,7 @@ window.Loaded.Add(fun _ ->
       handled <- true
 
       match LanguagePrimitives.EnumOfValue<int, WindowsMsg>(msg) with
-      | WindowsMsg.Reset -> resetTimer()
+      | WindowsMsg.Reset -> startWork true
       | WindowsMsg.Quit -> application.Shutdown()
       | _ -> handled <- false
    

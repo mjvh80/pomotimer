@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="" Height="180" Width="180"
         Topmost="True" WindowStyle="None"
+        xmlns:pomoctrls="clr-namespace:Controls;assembly=PomodoroTimer"
+
         Background="Transparent" AllowsTransparency="true" Name="Root">
     <Window.Resources>
         <ControlTemplate x:Key="timelineChunk">
@@ -70,17 +72,10 @@
         <Canvas>
             <Viewport3D Height="140" Width="150" Canvas.Top="0" Canvas.Left="0">
                 <Viewport3D.Clip>
-                    <EllipseGeometry
-                  RadiusX="75"
-                  RadiusY="75"
-                  Center="75,75"/>
+                    <EllipseGeometry RadiusX="75" RadiusY="75" Center="75,75"/>
                 </Viewport3D.Clip>
                 <Viewport3D.Camera>
-                    <PerspectiveCamera x:Name="myCamera" Position="0 0 520" 
-
-                      LookDirection="0 0 -1"  />
-
-                    <!--UpDirection="0,1,0" FieldOfView="90"/>-->
+                    <PerspectiveCamera x:Name="myCamera" Position="0 0 520" LookDirection="0 0 -1"  />
                 </Viewport3D.Camera>
                 <Viewport2DVisual3D x:Name="v2dv3d">
                     <Viewport2DVisual3D.Transform>
@@ -88,9 +83,7 @@
                             <RotateTransform3D>
                                 <RotateTransform3D.Rotation>
                                     <AxisAngleRotation3D x:Name="myAngleRotation2" Axis="0,1,0" Angle="0" />
-
                                 </RotateTransform3D.Rotation>
-
                             </RotateTransform3D>
                             <ScaleTransform3D>
                                 <ScaleTransform3D.ScaleY>0.5</ScaleTransform3D.ScaleY>
@@ -109,9 +102,24 @@ TriangleIndices="0 1 11  1 12 11  1 2 12  2 13 12  2 3 13  3 14 13  3 4 14  4 15
                     <Viewport2DVisual3D.Material>
                         <DiffuseMaterial Viewport2DVisual3D.IsVisualHostMaterial="True" Brush="Red" />
                     </Viewport2DVisual3D.Material>
-
-                    <ScrollViewer  HorizontalScrollBarVisibility="Hidden" Name="TimelineScroller" VerticalScrollBarVisibility="Hidden" Width="150">
-
+                    <pomoctrls:ExtendedScrollViewer HorizontalScrollBarVisibility="Hidden" Name="TimelineScroller" VerticalScrollBarVisibility="Hidden" Width="150">
+                        <pomoctrls:ExtendedScrollViewer.Triggers>
+                            <!-- Animation that resets the scroller on restart. -->
+                            <EventTrigger RoutedEvent="{x:Static pomoctrls:ExtendedScrollViewer.RestartEvent}">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation
+                                            Storyboard.TargetName="TimelineScroller"
+                                            Storyboard.TargetProperty="HorizontalScrollPosition"
+                                            From="{Binding ElementName=TimelineScroller, Path=HorizontalOffset}" To="0.0" Duration="0:0:0.6">
+                                            <DoubleAnimation.EasingFunction>
+                                                <PowerEase Power="2" EasingMode="EaseIn"/>
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </pomoctrls:ExtendedScrollViewer.Triggers>
                         <StackPanel Orientation="Horizontal">
                             <!-- Spacer -->
                             <Canvas Height="10" Width="75" Background="Transparent" Name="timelineSpacer"/>
@@ -124,12 +132,11 @@ TriangleIndices="0 1 11  1 12 11  1 2 12  2 13 12  2 3 13  3 14 13  3 4 14  4 15
                             <Control Template="{StaticResource timelineChunk}" />
                             <Control Template="{StaticResource timelineChunk}" />
                         </StackPanel>
-                    </ScrollViewer>
+                    </pomoctrls:ExtendedScrollViewer>
                 </Viewport2DVisual3D>
                 <ModelVisual3D>
                     <ModelVisual3D.Content>
                         <AmbientLight Color="White" />
-                        <!--<DirectionalLight Direction="0,0,-5" />-->
                     </ModelVisual3D.Content>
                 </ModelVisual3D>
             </Viewport3D>
@@ -163,8 +170,6 @@ TriangleIndices="0 1 11  1 12 11  1 2 12  2 13 12  2 3 13  3 14 13  3 4 14  4 15
                     <BlurBitmapEffect Radius="10" />
                 </Ellipse.BitmapEffect>
             </Ellipse>
-
         </Canvas>
     </Border>
-
 </Window>
