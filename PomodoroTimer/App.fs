@@ -1,5 +1,7 @@
 ﻿module App
 
+// Ignore unverifiable IL warning.
+#nowarn "9"
 
 open System
 open System.Net
@@ -21,7 +23,23 @@ open System.Diagnostics
 extern bool LockWorkStation();
 
 [<DllImport("user32.dll", SetLastError = true)>]
-extern nativeint SendMessage(nativeint hWnd, int Msg, nativeint wParam, nativeint lParam);
+extern nativeint SendMessage(nativeint hWnd, int Msg, nativeint wParam, nativeint lParam)
+
+[<StructLayout(LayoutKind.Sequential)>]
+type FLASHWINFO =
+   struct
+      val cbSize: UInt32
+      val hwnd: nativeint
+      val dwFlags: UInt32
+      val uCount: UInt32
+      val dwTimeout: UInt32
+
+      new(hwnd, dwFlags, uCount, dwTimeout) = { cbSize = Convert.ToUInt32(Marshal.SizeOf(typeof<FLASHWINFO>)); hwnd = hwnd; dwFlags = dwFlags; uCount = uCount; dwTimeout = dwTimeout }
+   end
+
+[<DllImport("user32.dll", SetLastError = true)>]
+extern [<return: MarshalAs(UnmanagedType.Bool)>] bool FlashWindowEx(FLASHWINFO& pInfo) 
+
 // End Interop
 
 type Application = XAML<"Application.xaml">
@@ -41,6 +59,10 @@ type MainWindow() =
 // Info about break and work. WorkTimer times work done, BreakTimer times the current break.
 type BreakInfo = { WorkTimer: Stopwatch; BreakTimer: Stopwatch } with
    static member FromDispatcherTimer(timer: System.Windows.Threading.DispatcherTimer) = timer.Tag :?> BreakInfo
+
+// Config
+let workSlotInMinutes = 25
+
 
 // Construct application etc.
 let window = MainWindow()
@@ -90,6 +112,7 @@ let updateWindowIcon(minutes: int) =
    (icon.FindName("minutes") :?> Label).Content <- minutes.ToString() // fuck databinding
    rtb.Render(icon)
    window.Icon <- rtb
+   ()
 
 
 // Take a break, stops the dispatch timer and locks the current computer.
@@ -102,15 +125,22 @@ let takeBreak() =
 // Start work, resets work timer if the break was long enough.
 // Todo: if the break is too short after 25 minutes, the workstation will lock in a "loop"
 let startWork(ignoreBreak) =
+   dispatcherTimer.Stop()
+
    let breakInfo = BreakInfo.FromDispatcherTimer(dispatcherTimer)
    let breakTimeInMinutes = if breakInfo.BreakTimer = null then 0.0 else breakInfo.BreakTimer.Elapsed.TotalMinutes
    if not(ignoreBreak) && (breakTimeInMinutes < 5.) then
       // break is too short, so we don't touch the timer
       ()
    else
-      BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer.Restart()
-      (scroller :?> Controls.ExtendedScrollViewer).OnRestart()
+      let mutable info = new FLASHWINFO(window.Handle, (* stop flashing *) 0u, 0u, 0u)
+      FlashWindowEx(&info) |> ignore
+
       updateWindowIcon(0)
+      BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer.Restart()
+
+      (scroller :?> Controls.ExtendedScrollViewer).OnRestart()
+      
 
    dispatcherTimer.Start()
 
@@ -142,8 +172,13 @@ dispatcherTimer.Tick.Add(fun e ->
 
    let hiresTimer = BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer
 
-   // todo: make this configurable
-   if (hiresTimer.Elapsed.TotalMinutes > 25.0) then
+   // Let's give a 10s headsup by flashing the taskbar.
+   let flashAfterSeconds = workSlotInMinutes * 60 - 10 |> float
+   if hiresTimer.Elapsed.TotalSeconds > flashAfterSeconds then
+      let mutable info = new FLASHWINFO(window.Handle, (* flash task tray *) 2u, 50u, 200u)
+      FlashWindowEx(&info) |> ignore
+
+   if hiresTimer.Elapsed.TotalMinutes > float(workSlotInMinutes) then
       takeBreak()
    )
 
