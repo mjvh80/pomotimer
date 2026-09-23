@@ -179,11 +179,15 @@ TriangleIndices="0 1 11  1 12 11  1 2 12  2 13 12  2 3 13  3 14 13  3 4 14  4 15
             <Grid x:Name="PauseIndicator" Canvas.Left="65" Canvas.Top="10"
                   Width="20" Height="20" Visibility="Collapsed"
                   AutomationProperties.Name="Paused">
-                <Grid.Effect>
-                    <DropShadowEffect Color="Black" BlurRadius="3" ShadowDepth="1" Opacity="0.8" />
-                </Grid.Effect>
-                <Rectangle Width="5" Height="20" Fill="White" HorizontalAlignment="Left" />
-                <Rectangle Width="5" Height="20" Fill="White" HorizontalAlignment="Right" />
+                                <Grid.OpacityMask>
+                                        <RadialGradientBrush Center="0.5,1" GradientOrigin="0.5,1" RadiusX="1.5" RadiusY="1">
+                                                <GradientStop Color="#FF000000" Offset="0" />
+                                                <GradientStop Color="#EE000000" Offset="0.45" />
+                                                <GradientStop Color="#60000000" Offset="1" />
+                                        </RadialGradientBrush>
+                                </Grid.OpacityMask>
+                <Path Fill="White" Data="M 1.1,0 L 4.9,0 Q 5.5,0 5.47,0.6 Q 5,10 5,19.4 Q 5,20 4.4,20 L 0.6,20 Q 0,20 0,19.4 Q 0,10 0.47,0.6 Q 0.5,0 1.1,0 Z" />
+                <Path Fill="White" Data="M 18.9,0 L 15.1,0 Q 14.5,0 14.53,0.6 Q 15,10 15,19.4 Q 15,20 15.6,20 L 19.4,20 Q 20,20 20,19.4 Q 20,10 19.53,0.6 Q 19.5,0 18.9,0 Z" />
             </Grid>
         </Canvas>
     </Border>

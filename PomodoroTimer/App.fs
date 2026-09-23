@@ -368,10 +368,17 @@ window.StateChanged.Add(fun _ ->
 )
 
 // Set up window movement with mouse.
+window.PreviewMouseDoubleClick.Add(fun eventArgs ->
+   if eventArgs.ChangedButton = MouseButton.Left && not isPreview then
+      window.ReleaseMouseCapture()
+      if locks.IsLocked then setLockState LockState.Keyboard false
+      eventArgs.Handled <- true)
 window.PreviewMouseDown.Add(fun eventArgs ->
    if eventArgs.ChangedButton = MouseButton.Left then
-      dragCoords <- eventArgs.GetPosition(window)
-      window.CaptureMouse() |> ignore)
+      if eventArgs.ClickCount = 1 then
+         dragCoords <- eventArgs.GetPosition(window)
+         window.CaptureMouse() |> ignore
+      else window.ReleaseMouseCapture())
 window.PreviewMouseUp.Add(fun eventArgs ->
    if eventArgs.ChangedButton = MouseButton.Left then window.ReleaseMouseCapture())
 window.PreviewMouseMove.Add(fun eventArgs ->
@@ -509,6 +516,11 @@ let main _ =
                (fun locked -> SendMessage(window.Handle, 0x0312, nativeint (if locked then keyboardLockHotkey else keyboardUnlockHotkey), IntPtr.Zero) |> ignore)
                (fun locked -> setLockState LockState.Session locked)
                (fun () -> pauseIndicatorTimer.IsEnabled)
+               (fun () -> dispatcherTimer.IsEnabled)
+            SmokeTest.checkDoubleClickResume window (BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer)
+               (fun locked -> setLockState LockState.Keyboard locked)
+               (fun locked -> setLockState LockState.Session locked)
+               (fun () -> dispatcherTimer.IsEnabled)
             SmokeTest.run window (BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer)
                (fun () -> countdownWindows.Windows) startBreakApproachingNotification stopBreakApproachingNotification
                settingsPath (fun () -> workSlotInMinutes)

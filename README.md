@@ -37,16 +37,22 @@ Unmodified **F24** starts a break and hides countdown warnings without locking
 Windows. **F22** ends the keyboard break. These are global hotkeys, so the tomato
 does not need focus. A break of at least five minutes resets the work interval;
 shorter breaks retain the existing elapsed-work accounting, just like Windows
-lock/unlock. Repeated lock signals do not restart the break clock. If both the
-keyboard and Windows are locked, work resumes only when both are unlocked.
+lock/unlock. Repeated lock signals do not restart the break clock. F22 does not
+resume work while Windows remains locked. Unlocking or logging into Windows
+resumes work and clears any stale keyboard-lock state, since F22 may have been
+sent while the Windows lock screen prevented the app from receiving it.
 
 A pause symbol on the tomato pulses slowly during a short break. After five
 minutes it stays solid, indicating that returning will reset the work timer.
 It disappears when all lock sources are cleared. No notification or sound is used.
+Left-double-click the tomato to resume a keyboard break manually, using the same
+five-minute reset rule as F22. This does not reset an already-running timer or
+bypass a Windows lock. Single-click dragging is unchanged; preview stays paused.
 
 The app reports a warning if another application or timer instance has already
 reserved either hotkey. Hotkeys are released when the app exits. The keyboard must
-send an unlock signal; its physical lock state cannot otherwise be queried.
+send an unlock signal when Windows stays unlocked; its physical lock state cannot
+otherwise be queried.
 
 ## Settings
 

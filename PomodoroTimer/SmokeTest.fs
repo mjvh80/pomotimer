@@ -27,8 +27,11 @@ let checkKeyboardLocks (window: Window) (breakTimer: Stopwatch) isUpdating sendK
     check (tracker.Set(LockState.Session, false) = LockState.BreakEnded && not tracker.IsLocked) "Final unlock did not end the break."
     tracker.Set(LockState.Keyboard, true) |> ignore
     tracker.Set(LockState.Session, true) |> ignore
-    check (tracker.Set(LockState.Session, false) = LockState.Unchanged && tracker.IsLocked) "Windows unlock ignored the keyboard lock."
-    check (tracker.Set(LockState.Keyboard, false) = LockState.BreakEnded) "Keyboard unlock did not end the overlapping break."
+    check (tracker.Set(LockState.Session, false) = LockState.BreakEnded && not tracker.IsLocked) "Windows unlock did not clear a missed keyboard unlock."
+    check (tracker.Set(LockState.Keyboard, false) = LockState.Unchanged) "Late keyboard unlock ended the break twice."
+    check (tracker.Set(LockState.Session, false) = LockState.Unchanged) "Repeated Windows unlock ended the break twice."
+    tracker.Set(LockState.Keyboard, true) |> ignore
+    check (tracker.Set(LockState.Session, false) = LockState.BreakEnded && not tracker.IsLocked) "Windows unlock retained a keyboard lock when the session lock event was missed."
     sendKeyboardSignal true
     check (not (isUpdating()) && breakTimer.IsRunning) "F24 did not stop updates and time the break."
     breakTimer.Stop()
@@ -102,7 +105,7 @@ let private captureWindow (window: Window) fileName =
     use output = File.Create(Path.Combine(AppContext.BaseDirectory, fileName))
     encoder.Save(output)
 
-let checkPauseIndicator (window: Window) refresh sendKeyboardSignal setSessionLocked isUpdating =
+let checkPauseIndicator (window: Window) refresh sendKeyboardSignal setSessionLocked isUpdating isWorkUpdating =
     let indicator = window.FindName("PauseIndicator") :?> FrameworkElement
     check (indicator.Visibility = Visibility.Collapsed && not (isUpdating())) "Pause indicator was active during work."
     sendKeyboardSignal true
@@ -142,9 +145,40 @@ let checkPauseIndicator (window: Window) refresh sendKeyboardSignal setSessionLo
     check (indicator.IsVisible && indicator.HasAnimatedProperties) "Windows lock did not show the pause indicator."
     sendKeyboardSignal true
     setSessionLocked false
-    check indicator.IsVisible "Windows unlock hid an ongoing keyboard break."
+    check (indicator.Visibility = Visibility.Collapsed && not (isUpdating()) && isWorkUpdating()) "Windows unlock did not clear the stale keyboard pause and resume work."
+    refresh (TimeSpan.FromMinutes(10.))
+    check (indicator.Visibility = Visibility.Collapsed && not (isUpdating())) "A later indicator update restored the stale pause."
     sendKeyboardSignal false
     check (indicator.Visibility = Visibility.Collapsed && not (isUpdating())) "Keyboard unlock left the pause indicator active."
+    check (isWorkUpdating()) "Late F22 interrupted resumed work."
+    sendKeyboardSignal true
+    setSessionLocked true
+    refresh (TimeSpan.FromMinutes(5.))
+    setSessionLocked false
+    check (indicator.Visibility = Visibility.Collapsed && not indicator.HasAnimatedProperties && isWorkUpdating()) "Windows unlock left the solid pause visible after a missed F22."
+
+let checkDoubleClickResume (window: Window) (workTimer: Stopwatch) setKeyboardLocked setSessionLocked isUpdating =
+    let indicator = window.FindName("PauseIndicator") :?> FrameworkElement
+    let doubleClick button =
+        let args = Input.MouseButtonEventArgs(Input.Mouse.PrimaryDevice, Environment.TickCount, button)
+        args.RoutedEvent <- Control.PreviewMouseDoubleClickEvent
+        window.RaiseEvent(args)
+    setKeyboardLocked true
+    doubleClick Input.MouseButton.Right
+    check (indicator.IsVisible && not (isUpdating())) "Right double-click resumed work."
+    let elapsed = workTimer.Elapsed
+    doubleClick Input.MouseButton.Left
+    check (indicator.Visibility = Visibility.Collapsed && isUpdating()) "Left double-click did not resume work and hide pause."
+    check (workTimer.Elapsed >= elapsed) "Double-click reset a short break."
+    let resumedElapsed = workTimer.Elapsed
+    doubleClick Input.MouseButton.Left
+    check (isUpdating() && workTimer.Elapsed >= resumedElapsed) "Double-click reset an already-running timer."
+    setSessionLocked true
+    setKeyboardLocked true
+    doubleClick Input.MouseButton.Left
+    check (indicator.IsVisible && not (isUpdating())) "Double-click bypassed a Windows lock."
+    setSessionLocked false
+    check (indicator.Visibility = Visibility.Collapsed && isUpdating()) "Windows unlock did not resume after double-click."
 
 let private checkWorkLimitMarker (window: Window) expectedMinutes =
     let firstPart = window.FindName("firstTimelinePart") :?> Control
@@ -186,7 +220,8 @@ let checkPausePreview (window: Window) (options: PausePreview.Options) isUpdatin
     check (indicator.HasAnimatedProperties = (options.BreakSeconds < 300)) "Preview showed the wrong initial pause state."
     for name in ["RestartMenuItem"; "SettingsMenuItem"; "SnoozeMenuItem"] do
         check (not (window.FindName(name) :?> MenuItem).IsEnabled) "Preview enabled a timer command."
-    let timer = DispatcherTimer(Interval = TimeSpan.FromSeconds(2.))
+    let timer = DispatcherTimer(DispatcherPriority.ApplicationIdle, window.Dispatcher)
+    timer.Interval <- TimeSpan.FromSeconds(2.)
     timer.Tick.Add(fun _ ->
         timer.Stop()
         try
