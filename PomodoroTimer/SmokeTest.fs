@@ -45,6 +45,46 @@ let checkKeyboardLocks (window: Window) (breakTimer: Stopwatch) isUpdating sendK
     sendKeyboardSignal false
     check (isUpdating()) "Repeated F22 interrupted work."
 
+let checkWindowPlacement() =
+    let primary: WindowPlacement.Monitor = { DeviceName = "primary"; WorkingArea = Rect(0., 0., 1920., 1040.); IsPrimary = true }
+    let secondary: WindowPlacement.Monitor = { DeviceName = "secondary"; WorkingArea = Rect(-1280., 100., 1280., 984.); IsPrimary = false }
+    let monitors = [| primary; secondary |]
+    let size = Size(180., 180.)
+    let original = Point(-1100., 250.)
+    let placement = WindowPlacement.capture monitors (Rect(original, size)) |> Option.get
+    check (placement.MonitorName = "secondary") "Placement selected the wrong monitor."
+    check (WindowPlacement.restore monitors size placement = Some original) "Placement did not restore exactly."
+    let moved = { secondary with WorkingArea = Rect(1920., 0., 1280., 984.) }
+    check (WindowPlacement.restore [|primary; moved|] size placement = Some (Point(2100., 150.))) "Placement did not follow a rearranged monitor."
+    let fallback = WindowPlacement.restore [|primary|] size placement |> Option.get
+    check (primary.WorkingArea.Contains(Rect(fallback, size))) "Disconnected monitor left the timer off-screen."
+    let edge = { placement with OffsetX = 1250.; OffsetY = 950. }
+    let largeSize = Size(360., 360.)
+    let clamped = WindowPlacement.restore monitors largeSize edge |> Option.get
+    check (secondary.WorkingArea.Contains(Rect(clamped, largeSize))) "Restored scaled timer exceeded the working area."
+    check (WindowPlacement.restore [||] size placement = None) "No-monitor restoration did not fail gracefully."
+    check (WindowPlacement.restore monitors size { placement with Left = Double.NaN } = None) "Invalid coordinates were accepted."
+    let directory = Path.Combine(Path.GetTempPath(), "PomodoroTimer-placement-" + Guid.NewGuid().ToString("N"))
+    let path = Path.Combine(directory, "window-position.json")
+    try
+        check (WindowPlacement.load path = None) "Missing placement did not keep default positioning."
+        check (WindowPlacement.save path placement = Ok ()) "Could not save window position."
+        let reloaded = WindowPlacement.load path |> Option.get
+        check (WindowPlacement.restore monitors size reloaded = Some original) "Position did not survive a simulated relaunch."
+        do
+            use lockedFile = File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None)
+            check (WindowPlacement.save path edge |> Result.isError) "Saving a locked placement file did not report failure."
+        check (WindowPlacement.load path = Some placement) "Failed placement save damaged the previous position."
+        check (Directory.GetFiles(directory, "*.tmp").Length = 0) "Failed placement save left temporary files."
+        File.WriteAllText(path, "not json")
+        check (WindowPlacement.load path = None) "Corrupt placement was accepted."
+        File.WriteAllText(path, "null")
+        check (WindowPlacement.load path = None) "Null placement was accepted."
+        File.WriteAllText(path, "{}")
+        check (WindowPlacement.load path = None) "Empty placement was accepted."
+    finally
+        if Directory.Exists(directory) then Directory.Delete(directory, true)
+
 let private checkWorkDeadline() =
     let elapsed = TimeSpan.FromMinutes(30.)
     check (WorkInterval.deadlineAfterDurationChange 40 elapsed = TimeSpan.FromMinutes(40.))

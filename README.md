@@ -93,6 +93,20 @@ and loaded on startup. Missing, invalid, or unreadable settings fall back to
 preferences and use defaults for missing fields. Save failures are shown in the
 dialog without changing the timer.
 
+## Window Position
+
+The tomato remembers its position after dragging and on normal exit. Placement is
+saved separately in `%LOCALAPPDATA%\PomodoroTimer\window-position.json`, using the
+Windows display device name and an offset within that display's usable area.
+Relaunching restores that position, accounting for the saved timer size.
+
+If the monitor has moved, the position follows it. If it is unavailable, the timer
+uses a display overlapping its previous position, or the primary display, and
+clamps the position inside the usable area. Windows may rename displays after
+docking or driver changes, so the device name is not a permanent hardware ID.
+Missing or corrupt placement files leave the default startup position unchanged.
+Preview and smoke-test launches do not read or overwrite your saved position.
+
 ## Pause Preview
 
 Preview the pause symbol without keyboard firmware or waiting five minutes:
@@ -136,6 +150,8 @@ keys into other applications nor reserve the global hotkeys.
 Separate preview launches check the requested work position, initial pause states,
 and the automatic transition from pulsing to solid across the five-minute boundary.
 Tests use temporary settings files and leave your saved preferences untouched.
+Placement tests cover saved-position round trips, monitor rearrangement/removal,
+on-screen clamping, invalid files, and failed-save recovery using simulated monitors.
 Workstation locking and jump-list changes are disabled in this mode.
 Screenshots and logs are written alongside the executable. The script terminates
 the test if it exceeds 20 seconds. Actual session lock/unlock, physical docking, mixed-DPI display

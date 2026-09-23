@@ -95,6 +95,27 @@ let applyTimerScale percent =
    window.Height <- baseWindowHeight * factor
 
 applyTimerScale preferences.TimerScalePercent
+let placementPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(settingsPath), "window-position.json")
+let getPlacementMonitors() : WindowPlacement.Monitor array =
+   WpfScreenHelper.Screen.AllScreens
+   |> Seq.map (fun screen -> ({ DeviceName = screen.DeviceName; WorkingArea = screen.WorkingArea; IsPrimary = screen.Primary }: WindowPlacement.Monitor))
+   |> Seq.toArray
+let mutable placementReady = false
+let saveWindowPlacement() =
+   if placementReady && not isSmokeTest && not isPreview && window.WindowState = WindowState.Normal then
+      WindowPlacement.capture (getPlacementMonitors()) (Rect(window.Left, window.Top, window.Width, window.Height))
+      |> Option.iter (fun placement ->
+         match WindowPlacement.save placementPath placement with
+         | Ok () -> ()
+         | Error message -> Trace.TraceWarning($"Could not save window position: {message}"))
+window.SourceInitialized.Add(fun _ ->
+   if not isSmokeTest && not isPreview then
+      WindowPlacement.load placementPath
+      |> Option.bind (WindowPlacement.restore (getPlacementMonitors()) (Size(window.Width, window.Height)))
+      |> Option.iter (fun position ->
+         window.WindowStartupLocation <- WindowStartupLocation.Manual
+         window.Left <- position.X
+         window.Top <- position.Y))
 let scroller = window.FindName("TimelineScroller") :?> System.Windows.Controls.ScrollViewer
 
 let icon = loadWindow "Icon.xaml"
@@ -380,7 +401,9 @@ window.PreviewMouseDown.Add(fun eventArgs ->
          window.CaptureMouse() |> ignore
       else window.ReleaseMouseCapture())
 window.PreviewMouseUp.Add(fun eventArgs ->
-   if eventArgs.ChangedButton = MouseButton.Left then window.ReleaseMouseCapture())
+   if eventArgs.ChangedButton = MouseButton.Left then
+      window.ReleaseMouseCapture()
+      saveWindowPlacement())
 window.PreviewMouseMove.Add(fun eventArgs ->
    if Mouse.LeftButton = MouseButtonState.Released then
       window.ReleaseMouseCapture()
@@ -412,6 +435,7 @@ let displaySettingsChangedHandler = EventHandler(fun _ _ ->
    window.Dispatcher.InvokeAsync(Action(fun () -> countdownWindows.Refresh())) |> ignore)
 SystemEvents.DisplaySettingsChanged.AddHandler(displaySettingsChangedHandler)
 application.Exit.Add(fun _ ->
+   saveWindowPlacement()
    dispatcherTimer.Stop()
    pauseIndicatorTimer.Stop()
    pauseIndicator.BeginAnimation(UIElement.OpacityProperty, null)
@@ -427,6 +451,7 @@ application.Exit.Add(fun _ ->
 
 // Once loaded, show taskbar icon and hook windows messages.
 window.Loaded.Add(fun _ -> 
+   placementReady <- true
    // Avoid the icon showing up as a separate window in e.g. alt+tab
    icon.Owner <- window
    updateWindowIcon(0)
@@ -508,6 +533,7 @@ let main _ =
       window.ContentRendered.Add(fun _ ->
          try
             SmokeTest.checkPreviewArguments()
+            SmokeTest.checkWindowPlacement()
             SmokeTest.checkKeyboardLocks window
                (BreakInfo.FromDispatcherTimer(dispatcherTimer).BreakTimer)
                (fun () -> dispatcherTimer.IsEnabled)

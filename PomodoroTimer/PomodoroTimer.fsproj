@@ -20,6 +20,7 @@
     <Compile Include="LockState.fs" />
     <Compile Include="CountdownWindows.fs" />
     <Compile Include="PausePreview.fs" />
+    <Compile Include="WindowPlacement.fs" />
     <Compile Include="SmokeTest.fs" />
     <Compile Include="App.fs" />
     <Resource Include="MainWindow.xaml" />
