@@ -48,6 +48,7 @@
                 </MenuItem.Icon>
             </MenuItem>
             <Separator />
+            <MenuItem Header="_Settings..." x:Name="SettingsMenuItem" />
             <MenuItem Header="Quit" x:Name="QuitMenuItem">
                 <MenuItem.Icon>
                     <Image Source="pack://application:,,,/resources/quit.ico" />

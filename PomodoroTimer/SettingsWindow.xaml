@@ -1,0 +1,40 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Name="SettingsWindow" Title="Pomodoro Timer Settings"
+        Width="420" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock Text="Timer" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16" />
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Label Content="_Work duration (minutes)" Target="{Binding ElementName=DurationInput}"
+                   VerticalAlignment="Center" Padding="0,0,12,0" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <RepeatButton x:Name="DecreaseDurationButton" Content="-" Width="32" Height="32"
+                              ToolTip="Decrease duration" AutomationProperties.Name="Decrease duration" />
+                <TextBox x:Name="DurationInput" Width="60" Height="32" Margin="4,0"
+                         VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                         AutomationProperties.Name="Work duration in minutes" />
+                <RepeatButton x:Name="IncreaseDurationButton" Content="+" Width="32" Height="32"
+                              ToolTip="Increase duration" AutomationProperties.Name="Increase duration" />
+            </StackPanel>
+        </Grid>
+        <TextBlock x:Name="ValidationError" Grid.Row="2" Visibility="Collapsed" Margin="0,12,0,0"
+                   TextWrapping="Wrap" Foreground="Firebrick" />
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
+                <Button x:Name="SaveSettingsButton" Content="_Save" IsDefault="True"
+                    MinWidth="80" Padding="12,6" Margin="0,0,8,0" />
+            <Button x:Name="CancelSettingsButton" Content="_Cancel" IsCancel="True" MinWidth="80" Padding="12,6" />
+        </StackPanel>
+    </Grid>
+</Window>

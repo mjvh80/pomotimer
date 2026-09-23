@@ -25,6 +25,9 @@ extern bool LockWorkStation();
 [<DllImport("user32.dll", SetLastError = true)>]
 extern nativeint SendMessage(nativeint hWnd, int Msg, nativeint wParam, nativeint lParam)
 
+[<DllImport("user32.dll", SetLastError = true)>]
+extern bool PostMessage(nativeint windowHandle, int message, nativeint wParam, nativeint lParam)
+
 [<StructLayout(LayoutKind.Sequential)>]
 type FLASHWINFO =
    struct
@@ -51,6 +54,7 @@ type WindowsMsg =
    | Restart = 0x0401
    | Quit = 0x0402
    | Snooze = 0x0403
+   | Settings = 0x0404
 
 type Window with
    member this.Handle = WindowInteropHelper(this).Handle
@@ -60,8 +64,13 @@ type BreakInfo = { WorkTimer: Stopwatch; BreakTimer: Stopwatch } with
    static member FromDispatcherTimer(timer: System.Windows.Threading.DispatcherTimer) = timer.Tag :?> BreakInfo
 
 // Config
-let workSlotInMinutes = 40
 let isSmokeTest = Environment.GetCommandLineArgs() |> Array.contains "--smoke-test"
+let settingsPath =
+   if isSmokeTest then
+      System.IO.Path.Combine(System.IO.Path.GetTempPath(), "PomodoroTimer-smoke-" + Guid.NewGuid().ToString("N"), "settings.json")
+   else
+      Settings.filePath
+let mutable workSlotInMinutes = Settings.load settingsPath
 
 
 // Construct application etc.
@@ -76,16 +85,17 @@ icon.ShowActivated <- false
 icon.Left <- -10000. // offscreen
 icon.Show() // required for rendering to image source to work
 
-// Add hook that checks for the /restart command line, and sends a Windows message to the relevant instance if found, before quitting.
+// Forward taskbar commands to the relevant instance before quitting.
 application.Startup.Add(fun (args: StartupEventArgs) ->
-   (
-      if args.Args.Length >= 2 then
-         if (args.Args.[0] = "/restart") then
-            let targetWindow = args.Args.[1] |> Int64.Parse |> nativeint
-            let result = SendMessage(targetWindow, LanguagePrimitives.EnumToValue(WindowsMsg.Restart), IntPtr.Zero, IntPtr.Zero)
-            application.Shutdown()
-   )
-)
+   match args.Args with
+   | [| command; target |] when command = "/restart" || command = "/settings" ->
+      match Int64.TryParse(target) with
+      | true, handle when handle <> 0L ->
+         let message = if command = "/settings" then WindowsMsg.Settings else WindowsMsg.Restart
+         let posted = PostMessage(nativeint handle, int message, IntPtr.Zero, IntPtr.Zero)
+         application.Shutdown(if posted then 0 else 1)
+      | _ -> application.Shutdown(1)
+   | _ -> ())
 
 
 // Allow window to be moved.
@@ -110,7 +120,9 @@ let doActualWorkStationLock() =
 // Sets the taskbar icon by rendering the Icon.xaml file to it.
 let updateWindowIcon(minutes: int) = 
    let rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(icon.Width |> int, icon.Height |> int, 96., 96., PixelFormats.Pbgra32);
-   (icon.FindName("minutes") :?> Label).Content <- minutes.ToString() // fuck databinding
+   let minutesLabel = icon.FindName("minutes") :?> Label
+   minutesLabel.Content <- minutes.ToString()
+   minutesLabel.FontSize <- if minutes >= 100 then 80. else 125.
    icon.UpdateLayout()
    rtb.Render(icon)
    window.Icon <- rtb
@@ -161,6 +173,8 @@ let stopBreakApproachingNotification() =
 
 let snooze() = ()
 
+let mutable workDeadline = TimeSpan.FromMinutes(float workSlotInMinutes)
+
 // Take a break, stops the dispatch timer and locks the current computer.
 let takeBreak() = 
    dispatcherTimer.Stop()
@@ -182,6 +196,7 @@ let startWork(ignoreBreak) =
       stopBreakApproachingNotification()
 
       updateWindowIcon(0)
+      workDeadline <- TimeSpan.FromMinutes(float workSlotInMinutes)
       BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer.Restart()
 
       (scroller :?> Controls.ExtendedScrollViewer).OnRestart()
@@ -192,17 +207,60 @@ let startWork(ignoreBreak) =
 
 // Initialize timer values in 5 minute intervals.
 let mutable minutes = 0;
-let timelineParts = (getTimelineParts window) |> Seq.toArray
-for i = 0 to (timelineParts.Length - 1) do
-   timelineParts.[i].ApplyTemplate() |> ignore
-   
-   let firstMinute = (timelineParts.[i].Template.FindName("firstMinute", timelineParts.[i])) :?> Label
-   firstMinute.Content <- minutes.ToString()
-   minutes <- minutes + 5
+let updateTimeline() =
+   let parts = getTimelineParts window |> Seq.toArray
+   let panel = parts[0].Parent :?> StackPanel
+   let requiredCount = max 8 ((workSlotInMinutes + 9) / 10)
+   if requiredCount > parts.Length then
+      for chunkIndex in parts.Length .. requiredCount - 1 do
+         panel.Children.Add(Control(Template = parts[0].Template)) |> ignore
+   elif requiredCount < parts.Length then
+      for part in parts |> Array.skip requiredCount do
+         panel.Children.Remove(part)
+   minutes <- 0
+   for part in getTimelineParts window do
+      part.ApplyTemplate() |> ignore
+      (part.Template.FindName("firstMinute", part) :?> Label).Content <- string minutes
+      minutes <- minutes + 5
+      (part.Template.FindName("secondMinute", part) :?> Label).Content <- string minutes
+      minutes <- minutes + 5
 
-   let secondMinute = (timelineParts.[i].Template.FindName("secondMinute", timelineParts.[i])) :?> Label
-   secondMinute.Content <- minutes.ToString()
-   minutes <- minutes + 5
+updateTimeline()
+
+let mutable settingsWindow: Window option = None
+
+let showSettings() =
+   match settingsWindow with
+   | Some dialog -> dialog.Activate() |> ignore
+   | None ->
+      let dialog = loadWindow "SettingsWindow.xaml"
+      dialog.Owner <- window
+      dialog.Topmost <- window.Topmost
+      let workTimer = BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer
+      let wasTimingWork = workTimer.IsRunning
+      let wasUpdating = dispatcherTimer.IsEnabled
+      let mutable saved = false
+      SettingsDialog.configure dialog workSlotInMinutes (fun duration ->
+         match Settings.save settingsPath duration with
+         | Error message -> Error message
+         | Ok () ->
+            workSlotInMinutes <- duration
+            updateTimeline()
+            workDeadline <- WorkInterval.deadlineAfterDurationChange duration workTimer.Elapsed
+            saved <- true
+            Ok ())
+      settingsWindow <- Some dialog
+      dispatcherTimer.Stop()
+      workTimer.Stop()
+      stopBreakApproachingNotification()
+      try
+         dialog.ShowDialog() |> ignore
+      finally
+         settingsWindow <- None
+         if saved && wasUpdating && workTimer.Elapsed >= workDeadline - TimeSpan.FromSeconds(10.) then
+            startBreakApproachingNotification()
+         if wasTimingWork then workTimer.Start()
+         if wasUpdating then dispatcherTimer.Start()
 
 
 // Update every 5s or so (10 is noticeable).
@@ -218,11 +276,11 @@ dispatcherTimer.Tick.Add(fun e ->
    let hiresTimer = BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer
 
    // Let's give a 10s headsup by flashing the taskbar.
-   let flashAfterSeconds = workSlotInMinutes * 60 - 10 |> float
-   if hiresTimer.Elapsed.TotalSeconds > flashAfterSeconds then
+   let flashAfter = workDeadline - TimeSpan.FromSeconds(10.)
+   if hiresTimer.Elapsed >= flashAfter then
       startBreakApproachingNotification()
 
-   if hiresTimer.Elapsed.TotalMinutes > float(workSlotInMinutes) then
+   if hiresTimer.Elapsed >= workDeadline then
       takeBreak()
    )
 
@@ -235,8 +293,12 @@ window.StateChanged.Add(fun _ ->
 )
 
 // Set up window movement with mouse.
-window.PreviewMouseDown.Add(fun e -> dragCoords <- e.GetPosition(window); window.CaptureMouse() |> ignore)
-window.PreviewMouseUp.Add(fun _ ->  window.ReleaseMouseCapture())
+window.PreviewMouseDown.Add(fun eventArgs ->
+   if eventArgs.ChangedButton = MouseButton.Left then
+      dragCoords <- eventArgs.GetPosition(window)
+      window.CaptureMouse() |> ignore)
+window.PreviewMouseUp.Add(fun eventArgs ->
+   if eventArgs.ChangedButton = MouseButton.Left then window.ReleaseMouseCapture())
 window.PreviewMouseMove.Add(fun eventArgs ->
    if Mouse.LeftButton = MouseButtonState.Released then
       window.ReleaseMouseCapture()
@@ -246,6 +308,7 @@ window.PreviewMouseMove.Add(fun eventArgs ->
       window.Top <- window.Top + position.Y - dragCoords.Y)
 
 (window.FindName("RestartMenuItem") :?> MenuItem).Click.Add(fun _ -> startWork true)
+(window.FindName("SettingsMenuItem") :?> MenuItem).Click.Add(fun _ -> showSettings())
 (window.FindName("QuitMenuItem") :?> MenuItem).Click.Add(fun _ -> application.Shutdown())
 
 // Hook system events to respond to lock event.
@@ -263,7 +326,10 @@ let sessionSwitchHandler = SessionSwitchEventHandler(fun _ args ->
 SystemEvents.SessionSwitch.AddHandler(sessionSwitchHandler)
 application.Exit.Add(fun _ ->
    dispatcherTimer.Stop()
-   SystemEvents.SessionSwitch.RemoveHandler(sessionSwitchHandler))
+   SystemEvents.SessionSwitch.RemoveHandler(sessionSwitchHandler)
+   if isSmokeTest then
+      let directory = System.IO.Path.GetDirectoryName(settingsPath)
+      if System.IO.Directory.Exists(directory) then System.IO.Directory.Delete(directory, true))
 
 // Once loaded, show taskbar icon and hook windows messages.
 window.Loaded.Add(fun _ -> 
@@ -278,6 +344,7 @@ window.Loaded.Add(fun _ ->
 
       match LanguagePrimitives.EnumOfValue<int, WindowsMsg>(msg) with
       | WindowsMsg.Restart -> startWork true
+      | WindowsMsg.Settings -> showSettings()
       | WindowsMsg.Quit -> application.Shutdown()
       | _ -> handled <- false
    
@@ -296,6 +363,14 @@ window.Loaded.Add(fun _ ->
 
       let jumpList = new JumpList()
       jumpList.JumpItems.Add(restartTask)
+      let settingsTask = new JumpTask()
+      settingsTask.ApplicationPath <- Environment.ProcessPath
+      settingsTask.Arguments <- "/settings " + window.Handle.ToString()
+      settingsTask.Title <- "Settings"
+      settingsTask.Description <- "Change the work duration"
+      settingsTask.IconResourcePath <- settingsTask.ApplicationPath
+      settingsTask.IconResourceIndex <- 0
+      jumpList.JumpItems.Add(settingsTask)
       JumpList.SetJumpList(application, jumpList)
       jumpList.Apply()
    )
@@ -310,6 +385,8 @@ let main _ =
          try
             SmokeTest.run window (BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer)
                timesUpTimerWindows startBreakApproachingNotification stopBreakApproachingNotification
+               settingsPath (fun () -> workSlotInMinutes)
+               (fun () -> SendMessage(window.Handle, int WindowsMsg.Settings, IntPtr.Zero, IntPtr.Zero) |> ignore)
          with error ->
             Console.Error.WriteLine(error)
             application.Shutdown(1))

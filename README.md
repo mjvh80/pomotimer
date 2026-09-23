@@ -2,12 +2,12 @@
 
 A simple "pomodoro" timer with some logic that suits my needs.
 
-* Work intervals are currently 40 minutes, followed by a break of at least 5 minutes.
+* Work intervals default to 40 minutes and are configurable, followed by a break of at least 5 minutes.
 * Unlocking or logging on resets the work timer after a sufficiently long break; shorter breaks keep the elapsed work time.
 * A countdown appears on each display shortly before expiry, then the workstation locks.
 * Holding right Ctrl when the timer expires prevents the lock.
 * The timer stays on top, including when all windows are minimized.
-* Right-click for Restart or Quit. The unfinished Snooze command is disabled.
+* Right-click for Settings, Restart, or Quit. The unfinished Snooze command is disabled.
 
 ## Requirements
 
@@ -30,7 +30,23 @@ dotnet run --project PomodoroTimer/PomodoroTimer.fsproj --configuration Release 
 
 The built application is at `PomodoroTimer/bin/Release/net10.0-windows/PomodoroTimer.exe`.
 Normal operation locks the workstation when the work interval expires.
-The interval is currently configured by `workSlotInMinutes` in [App.fs](PomodoroTimer/App.fs).
+
+## Settings
+
+Right-click the timer and choose **Settings**, or choose **Settings** from its
+taskbar jump list. Work duration accepts whole minutes from 1 to 240 and defaults
+to 40. Use the numeric field or its minus/plus buttons to change it.
+
+The timer pauses while the dialog is open. **Save** saves the duration and updates
+the current deadline without resetting elapsed work time. If the new duration has
+already elapsed, a fresh ten-second warning is given before locking. Otherwise,
+the timer continues toward the updated deadline. **Cancel** resumes without changing
+the duration. Use **Restart** explicitly when you want a fresh work interval.
+The five-minute minimum break is unchanged.
+
+Settings are saved per Windows user at `%LOCALAPPDATA%\PomodoroTimer\settings.json`
+and loaded on startup. Missing, invalid, or unreadable settings fall back to the
+40-minute default. Save failures are shown in the dialog without changing the timer.
 
 ## Verification
 
@@ -40,12 +56,16 @@ Run the bounded UI smoke test from an interactive Windows desktop:
 ./scripts/Smoke-Test.ps1
 ```
 
-It builds Release, briefly opens the timer and countdowns, verifies resource loading,
-timeline labels, countdown animation, Restart/Quit, and nonblank rendering, then exits.
+It builds Release and exercises the timer, countdowns, and settings dialog. Checks
+cover resource loading, timeline resizing, countdown animation, Restart/Quit,
+settings validation, Save/Cancel, elapsed-time preservation, overdue-save deadlines,
+persistence, and failed-save recovery. The
+settings command handler used by the taskbar jump list is also exercised.
+Tests use temporary settings files and leave your saved preferences untouched.
 Workstation locking and jump-list changes are disabled in this mode.
-A screenshot and logs are written alongside the executable. The script terminates
-the test if it exceeds 20 seconds. Actual session lock/unlock and mixed-DPI display
-placement still require manual verification.
+Screenshots and logs are written alongside the executable. The script terminates
+the test if it exceeds 20 seconds. Actual session lock/unlock, mixed-DPI display
+placement, and the Windows taskbar jump-list appearance still require manual verification.
 
 ## Publish
 

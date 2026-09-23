@@ -14,6 +14,9 @@
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="MidPointConverter.fs" />
     <Compile Include="ExtendedScrollViewer.fs" />
+    <Compile Include="Settings.fs" />
+    <Compile Include="SettingsDialog.fs" />
+    <Compile Include="WorkInterval.fs" />
     <Compile Include="SmokeTest.fs" />
     <Compile Include="App.fs" />
     <Resource Include="MainWindow.xaml" />
@@ -22,6 +25,7 @@
     <Resource Include="resources\restart.ico" />
     <Resource Include="resources\quit.ico" />
     <Resource Include="TimesUpTimer.xaml" />
+    <Resource Include="SettingsWindow.xaml" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="WpfScreenHelper" Version="2.1.1" />
