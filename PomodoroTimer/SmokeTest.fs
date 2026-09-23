@@ -132,12 +132,62 @@ let private checkSettingsDialog (window: Window) (workTimer: Stopwatch) settings
     check (getDuration() = 40 && Settings.load settingsPath = 40) "Shorter duration was not applied."
     check (countParts() = 8) "Timeline did not shrink after saving a shorter duration."
 
-let run (window: Window) (workTimer: Stopwatch) (countdowns: Window array) startNotification stopNotification settingsPath getDuration openRemoteSettings =
+let private checkDisplayChanges createCountdown =
+    let firstScreen = Rect(0., 0., 640., 480.)
+    let secondScreen = Rect(640., 0., 640., 480.)
+    let mutable bounds = [| firstScreen; secondScreen |]
+    let mutable elapsed = TimeSpan.Zero
+    let mutable createdCount = 0
+    let mutable closedCount = 0
+    let createWindow() =
+        let countdown: Window = createCountdown()
+        createdCount <- createdCount + 1
+        countdown.Closed.Add(fun _ -> closedCount <- closedCount + 1)
+        countdown
+    use manager = new CountdownWindows.Manager(createWindow, (fun () -> bounds), (fun () -> elapsed))
+    manager.Show()
+    check (manager.Windows.Length = 2) "Two displays did not receive two countdowns."
+    let originalWindows = manager.Windows
+    elapsed <- TimeSpan.FromSeconds(4.)
+    bounds <- [| Rect(0., 0., 800., 600.) |]
+    manager.Refresh()
+    check (originalWindows |> Array.forall (fun countdown -> not countdown.IsVisible)) "Removed-display countdowns remained visible."
+    check (closedCount = 2) "Old countdown windows were hidden rather than closed."
+    check (manager.Windows.Length = 1) "Removing a display left duplicate countdowns."
+    let remaining = manager.Windows[0]
+    let expectedLeft = (800. - remaining.Width) / 2.
+    let expectedTop = (600. - remaining.Height) / 2.
+    check (abs (remaining.Left - expectedLeft) <= 1. && abs (remaining.Top - expectedTop) <= 1.)
+        $"Countdown position ({remaining.Left}, {remaining.Top}) did not match ({expectedLeft}, {expectedTop}) within pixel rounding."
+    check ((remaining.FindName("TimesUpTimerText") :?> TextBlock).Text = "5")
+        "Display change restarted the countdown animation."
+    manager.Refresh()
+    check (createdCount - closedCount = 1) "Repeated display notifications accumulated windows."
+    bounds <- [| firstScreen; secondScreen; secondScreen |]
+    manager.Refresh()
+    check (manager.Windows.Length = 2 && createdCount - closedCount = 2) "Reconnect or duplicate bounds produced the wrong window count."
+    manager.Hide()
+    bounds <- [| secondScreen |]
+    manager.Refresh()
+    check (manager.Windows.Length = 0 && createdCount = closedCount) "An idle display change opened countdowns."
+    manager.Show()
+    check (manager.Windows.Length = 1) "A new warning reused stale display information."
+    check ((manager.Windows[0].FindName("TimesUpTimerText") :?> TextBlock).Text = "9") "New warning did not restart its animation."
+    bounds <- [||]
+    manager.Refresh()
+    check (createdCount = closedCount) "An empty display list retained countdowns."
+    bounds <- [| firstScreen |]
+    manager.Refresh()
+    (manager :> IDisposable).Dispose()
+    manager.Refresh()
+    check (manager.Windows.Length = 0 && createdCount = closedCount) "Shutdown or a queued refresh leaked countdown windows."
+
+let run (window: Window) (workTimer: Stopwatch) (getCountdowns: unit -> Window array) startNotification stopNotification settingsPath getDuration openRemoteSettings createCountdown =
     checkWorkDeadline()
     checkSettingsStorage()
+    checkDisplayChanges createCountdown
     check (window.IsVisible && window.ActualWidth > 0.) "Main window did not open."
     check (window.Icon <> null) "Taskbar icon was not rendered."
-    check (countdowns.Length > 0) "No display was detected."
 
     let restart = window.FindName("RestartMenuItem") :?> MenuItem
     let quit = window.FindName("QuitMenuItem") :?> MenuItem
@@ -151,6 +201,8 @@ let run (window: Window) (workTimer: Stopwatch) (countdowns: Window array) start
     checkSettingsDialog window workTimer settingsPath getDuration openRemoteSettings
 
     startNotification()
+    let countdowns = getCountdowns()
+    check (countdowns.Length > 0) "No display was detected."
     for countdown in countdowns do
         check countdown.IsVisible "Countdown window did not open."
         let text = countdown.FindName("TimesUpTimerText") :?> TextBlock
@@ -161,12 +213,13 @@ let run (window: Window) (workTimer: Stopwatch) (countdowns: Window array) start
     check (countdowns |> Array.forall (fun countdown -> not countdown.IsVisible)) "Countdown did not hide."
 
     startNotification()
+    let restartedCountdowns = getCountdowns()
     workTimer.Stop()
     let elapsedBeforeRestart = workTimer.Elapsed
     restart.RaiseEvent(RoutedEventArgs(MenuItem.ClickEvent))
     check workTimer.IsRunning "Restart did not start the work timer."
     check (workTimer.Elapsed < elapsedBeforeRestart) "Restart did not reset elapsed work time."
-    check (countdowns |> Array.forall (fun countdown -> not countdown.IsVisible)) "Restart did not clear the notification."
+    check (restartedCountdowns |> Array.forall (fun countdown -> not countdown.IsVisible)) "Restart did not clear the notification."
 
     captureWindow window "smoke-test.png"
 

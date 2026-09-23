@@ -128,30 +128,15 @@ let updateWindowIcon(minutes: int) =
    window.Icon <- rtb
    ()
 
-// Create "time's up timers" (counters that display when time's up).
-let timesUpTimerWindows =
-    WpfScreenHelper.Screen.AllScreens
-    |> Seq.map (fun screen ->
-         let countdown = loadWindow "TimesUpTimer.xaml"
-         countdown.ShowActivated <- true
-         countdown.ShowInTaskbar <- false
-         countdown.Left <- screen.Bounds.Left + (screen.Bounds.Width - countdown.Width) / 2.0
-         countdown.Top <- screen.Bounds.Top + (screen.Bounds.Height - countdown.Height) / 2.0
-         countdown)
-    |> Seq.toArray
+let countdownWindows =
+   new CountdownWindows.Manager(
+     (fun () -> loadWindow "TimesUpTimer.xaml"),
+     (fun () -> WpfScreenHelper.Screen.AllScreens |> Seq.map (fun screen -> screen.Bounds) |> Seq.toArray),
+     (fun () -> Stopwatch.GetElapsedTime(0L)))
 
-let showTimesUpTimers() =
-    for countdown in timesUpTimerWindows do
-         countdown.Show()
-         let text = countdown.FindName("TimesUpTimerText") :?> FrameworkElement
-         (text.FindResource("Animation") :?> Storyboard).Begin(countdown, true)
-         countdown.Activate() |> ignore
+let showTimesUpTimers() = countdownWindows.Show()
 
-let hideTimesUpTimers() =
-    for countdown in timesUpTimerWindows do
-         let text = countdown.FindName("TimesUpTimerText") :?> FrameworkElement
-         (text.FindResource("Animation") :?> Storyboard).Remove(countdown)
-         countdown.Hide()
+let hideTimesUpTimers() = countdownWindows.Hide()
 
 let mutable showingBreakApproachingNotification = false
 
@@ -324,9 +309,14 @@ let sessionSwitchHandler = SessionSwitchEventHandler(fun _ args ->
          | _ -> ())) |> ignore)
 
 SystemEvents.SessionSwitch.AddHandler(sessionSwitchHandler)
+let displaySettingsChangedHandler = EventHandler(fun _ _ ->
+   window.Dispatcher.InvokeAsync(Action(fun () -> countdownWindows.Refresh())) |> ignore)
+SystemEvents.DisplaySettingsChanged.AddHandler(displaySettingsChangedHandler)
 application.Exit.Add(fun _ ->
    dispatcherTimer.Stop()
    SystemEvents.SessionSwitch.RemoveHandler(sessionSwitchHandler)
+   SystemEvents.DisplaySettingsChanged.RemoveHandler(displaySettingsChangedHandler)
+   (countdownWindows :> IDisposable).Dispose()
    if isSmokeTest then
       let directory = System.IO.Path.GetDirectoryName(settingsPath)
       if System.IO.Directory.Exists(directory) then System.IO.Directory.Delete(directory, true))
@@ -384,9 +374,10 @@ let main _ =
       window.ContentRendered.Add(fun _ ->
          try
             SmokeTest.run window (BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer)
-               timesUpTimerWindows startBreakApproachingNotification stopBreakApproachingNotification
+               (fun () -> countdownWindows.Windows) startBreakApproachingNotification stopBreakApproachingNotification
                settingsPath (fun () -> workSlotInMinutes)
                (fun () -> SendMessage(window.Handle, int WindowsMsg.Settings, IntPtr.Zero, IntPtr.Zero) |> ignore)
+               (fun () -> loadWindow "TimesUpTimer.xaml")
          with error ->
             Console.Error.WriteLine(error)
             application.Shutdown(1))

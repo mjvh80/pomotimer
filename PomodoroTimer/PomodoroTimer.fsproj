@@ -17,6 +17,7 @@
     <Compile Include="Settings.fs" />
     <Compile Include="SettingsDialog.fs" />
     <Compile Include="WorkInterval.fs" />
+    <Compile Include="CountdownWindows.fs" />
     <Compile Include="SmokeTest.fs" />
     <Compile Include="App.fs" />
     <Resource Include="MainWindow.xaml" />

@@ -59,12 +59,14 @@ Run the bounded UI smoke test from an interactive Windows desktop:
 It builds Release and exercises the timer, countdowns, and settings dialog. Checks
 cover resource loading, timeline resizing, countdown animation, Restart/Quit,
 settings validation, Save/Cancel, elapsed-time preservation, overdue-save deadlines,
-persistence, and failed-save recovery. The
+persistence, and failed-save recovery. Simulated display disconnects, reconnects,
+rearrangements, and repeated change notifications verify countdown cleanup and
+animation continuity without changing the actual monitor configuration. The
 settings command handler used by the taskbar jump list is also exercised.
 Tests use temporary settings files and leave your saved preferences untouched.
 Workstation locking and jump-list changes are disabled in this mode.
 Screenshots and logs are written alongside the executable. The script terminates
-the test if it exceeds 20 seconds. Actual session lock/unlock, mixed-DPI display
+the test if it exceeds 20 seconds. Actual session lock/unlock, physical docking, mixed-DPI display
 placement, and the Windows taskbar jump-list appearance still require manual verification.
 
 ## Publish
