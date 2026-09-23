@@ -5,7 +5,7 @@ open System.IO
 open System.Text.Json
 
 [<CLIMutable>]
-type Preferences = { WorkDurationMinutes: int; TimerScalePercent: int }
+type Preferences = { WorkDurationMinutes: int; TimerScalePercent: int; SnoozeMinutes: int }
 
 let defaultDuration = 40
 let minimumDuration = 1
@@ -13,13 +13,22 @@ let maximumDuration = 240
 let defaultScale = 100
 let minimumScale = 50
 let maximumScale = 200
-let defaults = { WorkDurationMinutes = defaultDuration; TimerScalePercent = defaultScale }
+let defaultSnooze = 5
+let minimumSnooze = 1
+let maximumSnooze = 60
+let defaults = { WorkDurationMinutes = defaultDuration; TimerScalePercent = defaultScale; SnoozeMinutes = defaultSnooze }
 
 let filePath =
     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PomodoroTimer", "settings.json")
 
 let isValidDuration duration = duration >= minimumDuration && duration <= maximumDuration
 let isValidScale scale = scale >= minimumScale && scale <= maximumScale
+let isValidSnooze minutes = minutes >= minimumSnooze && minutes <= maximumSnooze
+
+let tryParseSnooze text =
+    match Int32.TryParse(text: string) with
+    | true, minutes when isValidSnooze minutes -> Some minutes
+    | _ -> None
 
 let tryParseDuration text =
     match Int32.TryParse(text: string) with
@@ -31,7 +40,8 @@ let load path =
         let preferences = JsonSerializer.Deserialize<Preferences>(File.ReadAllText(path))
         if not (obj.ReferenceEquals(preferences, null)) then
             { WorkDurationMinutes = if isValidDuration preferences.WorkDurationMinutes then preferences.WorkDurationMinutes else defaultDuration
-              TimerScalePercent = if isValidScale preferences.TimerScalePercent then preferences.TimerScalePercent else defaultScale }
+              TimerScalePercent = if isValidScale preferences.TimerScalePercent then preferences.TimerScalePercent else defaultScale
+              SnoozeMinutes = if isValidSnooze preferences.SnoozeMinutes then preferences.SnoozeMinutes else defaultSnooze }
         else
             defaults
     with
@@ -44,6 +54,8 @@ let save path preferences =
         Error $"Enter a whole number between {minimumDuration} and {maximumDuration}."
     elif not (isValidScale preferences.TimerScalePercent) then
         Error $"Choose a timer size between {minimumScale}%% and {maximumScale}%%."
+    elif not (isValidSnooze preferences.SnoozeMinutes) then
+        Error $"Enter a snooze interval between {minimumSnooze} and {maximumSnooze} minutes."
     else
         let temporaryPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp"
         try

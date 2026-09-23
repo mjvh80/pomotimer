@@ -8,6 +8,8 @@ open System.Windows.Input
 let configure (dialog: Window) (preferences: Settings.Preferences) savePreferences =
     let duration = preferences.WorkDurationMinutes
     let input = dialog.FindName("DurationInput") :?> TextBox
+    let snoozeInput = dialog.FindName("SnoozeInput") :?> TextBox
+    snoozeInput.Text <- string preferences.SnoozeMinutes
     let scale = dialog.FindName("TimerScaleSlider") :?> Slider
     scale.Minimum <- float Settings.minimumScale
     scale.Maximum <- float Settings.maximumScale
@@ -28,12 +30,24 @@ let configure (dialog: Window) (preferences: Settings.Preferences) savePreferenc
         | Key.Down -> step -1; eventArgs.Handled <- true
         | _ -> ())
     input.TextChanged.Add(fun _ -> errorText.Visibility <- Visibility.Collapsed)
+    let stepSnooze amount =
+        let current = Settings.tryParseSnooze snoozeInput.Text |> Option.defaultValue preferences.SnoozeMinutes
+        snoozeInput.Text <- string (max Settings.minimumSnooze (min Settings.maximumSnooze (current + amount)))
+    (dialog.FindName("DecreaseSnoozeButton") :?> RepeatButton).Click.Add(fun _ -> stepSnooze -1)
+    (dialog.FindName("IncreaseSnoozeButton") :?> RepeatButton).Click.Add(fun _ -> stepSnooze 1)
+    snoozeInput.PreviewKeyDown.Add(fun eventArgs ->
+        match eventArgs.Key with
+        | Key.Up -> stepSnooze 1; eventArgs.Handled <- true
+        | Key.Down -> stepSnooze -1; eventArgs.Handled <- true
+        | _ -> ())
+    snoozeInput.TextChanged.Add(fun _ -> errorText.Visibility <- Visibility.Collapsed)
     (dialog.FindName("CancelSettingsButton") :?> Button).Click.Add(fun _ -> dialog.DialogResult <- false)
     saveButton.Click.Add(fun _ ->
         let result =
-            match Settings.tryParseDuration input.Text with
-            | Some value -> savePreferences { preferences with WorkDurationMinutes = value; TimerScalePercent = int scale.Value }
-            | None -> Error $"Enter a whole number between {Settings.minimumDuration} and {Settings.maximumDuration}."
+            match Settings.tryParseDuration input.Text, Settings.tryParseSnooze snoozeInput.Text with
+            | Some value, Some snooze -> savePreferences { preferences with WorkDurationMinutes = value; TimerScalePercent = int scale.Value; SnoozeMinutes = snooze }
+            | None, _ -> Error $"Enter a whole number between {Settings.minimumDuration} and {Settings.maximumDuration}."
+            | _, None -> Error $"Enter a snooze interval between {Settings.minimumSnooze} and {Settings.maximumSnooze} minutes."
         match result with
         | Ok () -> dialog.DialogResult <- true
         | Error message ->

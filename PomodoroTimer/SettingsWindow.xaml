@@ -11,6 +11,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <TextBlock Text="Timer" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16" />
         <Grid Grid.Row="1">
@@ -33,6 +34,23 @@
         <Grid Grid.Row="2" Margin="0,16,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Label Content="Snoo_ze (minutes)" Target="{Binding ElementName=SnoozeInput}"
+                   VerticalAlignment="Center" Padding="0,0,12,0" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <RepeatButton x:Name="DecreaseSnoozeButton" Content="-" Width="32" Height="32"
+                              ToolTip="Decrease snooze interval" AutomationProperties.Name="Decrease snooze interval" />
+                <TextBox x:Name="SnoozeInput" Width="60" Height="32" Margin="4,0"
+                         VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                         AutomationProperties.Name="Snooze interval in minutes" />
+                <RepeatButton x:Name="IncreaseSnoozeButton" Content="+" Width="32" Height="32"
+                              ToolTip="Increase snooze interval" AutomationProperties.Name="Increase snooze interval" />
+            </StackPanel>
+        </Grid>
+        <Grid Grid.Row="3" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="150" />
             </Grid.ColumnDefinitions>
             <Label Content="Timer _size" Target="{Binding ElementName=TimerScaleSlider}"
@@ -45,9 +63,9 @@
                         AutomationProperties.Name="Timer size percent" />
             </StackPanel>
         </Grid>
-        <TextBlock x:Name="ValidationError" Grid.Row="3" Visibility="Collapsed" Margin="0,12,0,0"
+        <TextBlock x:Name="ValidationError" Grid.Row="4" Visibility="Collapsed" Margin="0,12,0,0"
                    TextWrapping="Wrap" Foreground="Firebrick" />
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
                 <Button x:Name="SaveSettingsButton" Content="_Save" IsDefault="True"
                     MinWidth="80" Padding="12,6" Margin="0,0,8,0" />
             <Button x:Name="CancelSettingsButton" Content="_Cancel" IsCancel="True" MinWidth="80" Padding="12,6" />

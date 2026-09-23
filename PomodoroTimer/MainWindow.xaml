@@ -30,6 +30,10 @@
                 <Rectangle StrokeThickness="2" Stroke="white" Width="2" Height="25" Canvas.Left="40" Canvas.Bottom="0"/>
                 <Rectangle StrokeThickness="2" Stroke="white" Width="2" Height="25" Canvas.Left="45" Canvas.Bottom="0"/>
 
+                <Rectangle x:Name="WorkLimitMarker" Width="4" Height="30"
+                           Fill="#FFD166" Canvas.Bottom="0" Visibility="Collapsed"
+                           AutomationProperties.Name="Configured work limit" />
+
                 <StackPanel Orientation="Horizontal" Canvas.Left="-12.5" Canvas.Bottom="30">
                     <Label FontSize="10" Foreground="White" Width="25" HorizontalContentAlignment="Center" Name="firstMinute">123</Label>
                     <Label FontSize="8" Foreground="White" Width="25" VerticalContentAlignment="Bottom" HorizontalContentAlignment="Center" Name="secondMinute">123</Label>
@@ -41,7 +45,7 @@
 
     <Window.ContextMenu>
         <ContextMenu>
-            <MenuItem Header="Snooze" IsEnabled="False" />
+            <MenuItem Header="Snooze" x:Name="SnoozeMenuItem" IsEnabled="False" />
             <MenuItem Header="Restart" x:Name="RestartMenuItem">
                 <MenuItem.Icon>
                     <Image Source="pack://application:,,,/resources/restart.ico" />
@@ -172,6 +176,15 @@ TriangleIndices="0 1 11  1 12 11  1 2 12  2 13 12  2 3 13  3 14 13  3 4 14  4 15
                     <BlurEffect Radius="10" />
                 </Ellipse.Effect>
             </Ellipse>
+            <Grid x:Name="PauseIndicator" Canvas.Left="65" Canvas.Top="10"
+                  Width="20" Height="20" Visibility="Collapsed"
+                  AutomationProperties.Name="Paused">
+                <Grid.Effect>
+                    <DropShadowEffect Color="Black" BlurRadius="3" ShadowDepth="1" Opacity="0.8" />
+                </Grid.Effect>
+                <Rectangle Width="5" Height="20" Fill="White" HorizontalAlignment="Left" />
+                <Rectangle Width="5" Height="20" Fill="White" HorizontalAlignment="Right" />
+            </Grid>
         </Canvas>
     </Border>
 </Window>
