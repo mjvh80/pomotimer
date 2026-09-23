@@ -70,13 +70,22 @@ let settingsPath =
       System.IO.Path.Combine(System.IO.Path.GetTempPath(), "PomodoroTimer-smoke-" + Guid.NewGuid().ToString("N"), "settings.json")
    else
       Settings.filePath
-let mutable workSlotInMinutes = Settings.load settingsPath
+let mutable preferences = Settings.load settingsPath
+let mutable workSlotInMinutes = preferences.WorkDurationMinutes
 
 
 // Construct application etc.
 let application = Application(ShutdownMode = ShutdownMode.OnMainWindowClose)
 let window = loadWindow "MainWindow.xaml"
 application.MainWindow <- window
+let baseWindowWidth, baseWindowHeight = window.Width, window.Height
+let applyTimerScale percent =
+   let factor = float percent / 100.
+   (window.Content :?> FrameworkElement).LayoutTransform <- ScaleTransform(factor, factor)
+   window.Width <- baseWindowWidth * factor
+   window.Height <- baseWindowHeight * factor
+
+applyTimerScale preferences.TimerScalePercent
 let scroller = window.FindName("TimelineScroller") :?> System.Windows.Controls.ScrollViewer
 
 let icon = loadWindow "Icon.xaml"
@@ -225,13 +234,16 @@ let showSettings() =
       let wasTimingWork = workTimer.IsRunning
       let wasUpdating = dispatcherTimer.IsEnabled
       let mutable saved = false
-      SettingsDialog.configure dialog workSlotInMinutes (fun duration ->
-         match Settings.save settingsPath duration with
+      SettingsDialog.configure dialog preferences (fun updated ->
+         match Settings.save settingsPath updated with
          | Error message -> Error message
          | Ok () ->
-            workSlotInMinutes <- duration
-            updateTimeline()
-            workDeadline <- WorkInterval.deadlineAfterDurationChange duration workTimer.Elapsed
+            if updated.WorkDurationMinutes <> workSlotInMinutes then
+               workSlotInMinutes <- updated.WorkDurationMinutes
+               updateTimeline()
+               workDeadline <- WorkInterval.deadlineAfterDurationChange workSlotInMinutes workTimer.Elapsed
+            preferences <- updated
+            applyTimerScale preferences.TimerScalePercent
             saved <- true
             Ok ())
       settingsWindow <- Some dialog

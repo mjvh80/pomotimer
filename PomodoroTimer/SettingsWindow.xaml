@@ -10,6 +10,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <TextBlock Text="Timer" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16" />
         <Grid Grid.Row="1">
@@ -29,9 +30,24 @@
                               ToolTip="Increase duration" AutomationProperties.Name="Increase duration" />
             </StackPanel>
         </Grid>
-        <TextBlock x:Name="ValidationError" Grid.Row="2" Visibility="Collapsed" Margin="0,12,0,0"
+        <Grid Grid.Row="2" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="150" />
+            </Grid.ColumnDefinitions>
+            <Label Content="Timer _size" Target="{Binding ElementName=TimerScaleSlider}"
+                   VerticalAlignment="Center" Padding="0,0,12,0" />
+            <StackPanel Grid.Column="1">
+                <TextBlock Text="{Binding ElementName=TimerScaleSlider, Path=Value, StringFormat={}{0:0}%}"
+                           HorizontalAlignment="Right" Margin="0,0,0,4" />
+                <Slider x:Name="TimerScaleSlider" Minimum="50" Maximum="200" Value="100"
+                        TickFrequency="5" IsSnapToTickEnabled="True" SmallChange="5" LargeChange="25"
+                        AutomationProperties.Name="Timer size percent" />
+            </StackPanel>
+        </Grid>
+        <TextBlock x:Name="ValidationError" Grid.Row="3" Visibility="Collapsed" Margin="0,12,0,0"
                    TextWrapping="Wrap" Foreground="Firebrick" />
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
                 <Button x:Name="SaveSettingsButton" Content="_Save" IsDefault="True"
                     MinWidth="80" Padding="12,6" Margin="0,0,8,0" />
             <Button x:Name="CancelSettingsButton" Content="_Cancel" IsCancel="True" MinWidth="80" Padding="12,6" />

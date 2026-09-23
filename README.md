@@ -37,16 +37,22 @@ Right-click the timer and choose **Settings**, or choose **Settings** from its
 taskbar jump list. Work duration accepts whole minutes from 1 to 240 and defaults
 to 40. Use the numeric field or its minus/plus buttons to change it.
 
-The timer pauses while the dialog is open. **Save** saves the duration and updates
+**Timer size** scales the tomato window and its timeline from 50% to 200% in
+5% steps, with 100% as the default. Countdown windows, menus, and the settings
+dialog remain at their normal size. The size is applied when you save and restored
+on startup. Changing only the size does not change the work deadline.
+
+The timer pauses while the dialog is open. **Save** saves your preferences and updates
 the current deadline without resetting elapsed work time. If the new duration has
 already elapsed, a fresh ten-second warning is given before locking. Otherwise,
 the timer continues toward the updated deadline. **Cancel** resumes without changing
-the duration. Use **Restart** explicitly when you want a fresh work interval.
+your preferences. Use **Restart** explicitly when you want a fresh work interval.
 The five-minute minimum break is unchanged.
 
 Settings are saved per Windows user at `%LOCALAPPDATA%\PomodoroTimer\settings.json`
-and loaded on startup. Missing, invalid, or unreadable settings fall back to the
-40-minute default. Save failures are shown in the dialog without changing the timer.
+and loaded on startup. Missing, invalid, or unreadable settings fall back to
+40 minutes and 100% size. Older duration-only files keep their saved duration and
+use 100% size. Save failures are shown in the dialog without changing the timer.
 
 ## Verification
 
@@ -59,7 +65,8 @@ Run the bounded UI smoke test from an interactive Windows desktop:
 It builds Release and exercises the timer, countdowns, and settings dialog. Checks
 cover resource loading, timeline resizing, countdown animation, Restart/Quit,
 settings validation, Save/Cancel, elapsed-time preservation, overdue-save deadlines,
-persistence, and failed-save recovery. Simulated display disconnects, reconnects,
+persistence, failed-save recovery, legacy settings migration, and tomato rendering
+at 50%, 75%, 100%, and 200%. Simulated display disconnects, reconnects,
 rearrangements, and repeated change notifications verify countdown cleanup and
 animation continuity without changing the actual monitor configuration. The
 settings command handler used by the taskbar jump list is also exercised.

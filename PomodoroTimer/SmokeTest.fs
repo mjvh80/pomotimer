@@ -32,17 +32,24 @@ let private checkSettingsStorage() =
     let directory = Path.Combine(Path.GetTempPath(), "PomodoroTimer-settings-test-" + Guid.NewGuid().ToString("N"))
     let path = Path.Combine(directory, "settings.json")
     try
-        check (Settings.load path = 40) "Missing settings did not default to 40 minutes."
+        check (Settings.load path = Settings.defaults) "Missing settings did not use defaults."
         for invalid in [""; "0"; "241"; "1.5"; "text"] do
             check (Settings.tryParseDuration invalid = None) "Invalid duration was accepted."
         check (Settings.tryParseDuration "1" = Some 1) "Minimum duration was rejected."
         check (Settings.tryParseDuration "240" = Some 240) "Maximum duration was rejected."
-        check (Settings.save path 25 = Ok ()) "Settings could not be saved."
-        check (Settings.load path = 25) "Saved settings did not round-trip."
-        check (Settings.save path 0 |> Result.isError) "Invalid settings were saved."
-        check (Settings.load path = 25) "Rejected settings changed the saved duration."
+        let custom = { Settings.defaults with WorkDurationMinutes = 25; TimerScalePercent = 75 }
+        check (Settings.save path custom = Ok ()) "Settings could not be saved."
+        check (Settings.load path = custom) "Saved settings did not round-trip."
+        check (Settings.save path { custom with WorkDurationMinutes = 0 } |> Result.isError) "Invalid settings were saved."
+        check (Settings.save path { custom with TimerScalePercent = 49 } |> Result.isError) "Invalid scale was saved."
+        check (Settings.save path { custom with TimerScalePercent = 201 } |> Result.isError) "Oversized scale was saved."
+        check (Settings.load path = custom) "Rejected settings changed the saved preferences."
+        File.WriteAllText(path, "{\"WorkDurationMinutes\":25}")
+        check (Settings.load path = { custom with TimerScalePercent = 100 }) "Legacy settings did not default to 100 percent."
+        File.WriteAllText(path, "{\"WorkDurationMinutes\":25,\"TimerScalePercent\":0}")
+        check ((Settings.load path).TimerScalePercent = 100) "Invalid scale did not fall back to 100 percent."
         File.WriteAllText(path, "not json")
-        check (Settings.load path = 40) "Corrupt settings did not fall back to defaults."
+        check (Settings.load path = Settings.defaults) "Corrupt settings did not fall back to defaults."
     finally
         if Directory.Exists(directory) then Directory.Delete(directory, true)
 
@@ -87,8 +94,10 @@ let private checkSettingsDialog (window: Window) (workTimer: Stopwatch) settings
         check dialog.IsVisible "Invalid settings closed the dialog."
         check ((dialog.FindName("ValidationError") :?> TextBlock).Visibility = Visibility.Visible) "Validation feedback was not shown."
         input.Text <- "25"
+        (dialog.FindName("TimerScaleSlider") :?> Slider).Value <- 50.
         click (dialog.FindName("CancelSettingsButton") :?> Button))
     check (getDuration() = 40 && not (File.Exists(settingsPath))) "Cancel changed settings."
+    check (window.Width = 180.) "Cancel changed timer size."
     check workTimer.IsRunning "Cancel did not resume the work timer."
 
     interact openFromMenu (fun dialog ->
@@ -102,7 +111,7 @@ let private checkSettingsDialog (window: Window) (workTimer: Stopwatch) settings
         click (dialog.FindName("SaveSettingsButton") :?> Button)
         check (workTimer.Elapsed = elapsedBeforeSave) "Save reset elapsed work time."
         check (not workTimer.IsRunning) "Save resumed work before the dialog closed.")
-    check (getDuration() = 120 && Settings.load settingsPath = 120) "Save did not apply and persist the new duration."
+    check (getDuration() = 120 && (Settings.load settingsPath).WorkDurationMinutes = 120) "Save did not apply and persist the new duration."
     check workTimer.IsRunning "Save did not resume the timer."
     let firstPart = window.FindName("firstTimelinePart") :?> Control
     let countParts() =
@@ -118,19 +127,38 @@ let private checkSettingsDialog (window: Window) (workTimer: Stopwatch) settings
         captureWindow dialog "settings-smoke-test.png"
         use lockedFile = File.Open(settingsPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None)
         input.Text <- "30"
+        (dialog.FindName("TimerScaleSlider") :?> Slider).Value <- 50.
         click (dialog.FindName("SaveSettingsButton") :?> Button)
         check dialog.IsVisible "Failed save closed the dialog."
         check (getDuration() = 120) "Failed save changed the active duration."
+        check (window.Width = 180.) "Failed save changed timer size."
         click (dialog.FindName("CancelSettingsButton") :?> Button))
-    check (Settings.load settingsPath = 120) "Failed save damaged persisted settings."
+    check ((Settings.load settingsPath).WorkDurationMinutes = 120) "Failed save damaged persisted settings."
 
     interact openFromMenu (fun dialog ->
         (dialog.FindName("DurationInput") :?> TextBox).Text <- "40"
         let elapsedBeforeSave = workTimer.Elapsed
         click (dialog.FindName("SaveSettingsButton") :?> Button)
         check (workTimer.Elapsed = elapsedBeforeSave) "Shortening the duration reset elapsed work time.")
-    check (getDuration() = 40 && Settings.load settingsPath = 40) "Shorter duration was not applied."
+    check (getDuration() = 40 && (Settings.load settingsPath).WorkDurationMinutes = 40) "Shorter duration was not applied."
     check (countParts() = 8) "Timeline did not shrink after saving a shorter duration."
+
+    for percent in [50; 75; 200; 100] do
+        interact openFromMenu (fun dialog ->
+            let elapsedBeforeSave = workTimer.Elapsed
+            (dialog.FindName("TimerScaleSlider") :?> Slider).Value <- float percent
+            click (dialog.FindName("SaveSettingsButton") :?> Button)
+            check (workTimer.Elapsed = elapsedBeforeSave) "Scaling reset elapsed work time.")
+        check ((Settings.load settingsPath).TimerScalePercent = percent) "Timer scale was not persisted."
+        check (getDuration() = 40) "Scale-only save changed work duration."
+        let factor = float percent / 100.
+        check (window.Width = 180. * factor && window.Height = 180. * factor) "Window dimensions did not scale."
+        let transform = (window.Content :?> FrameworkElement).LayoutTransform :?> ScaleTransform
+        check (transform.ScaleX = factor && transform.ScaleY = factor) "Timer contents did not scale uniformly."
+        captureWindow window $"timer-scale-{percent}.png"
+    interact openFromMenu (fun dialog ->
+        check ((dialog.FindName("TimerScaleSlider") :?> Slider).Value = 100.) "Dialog did not reload saved scale."
+        click (dialog.FindName("CancelSettingsButton") :?> Button))
 
 let private checkDisplayChanges createCountdown =
     let firstScreen = Rect(0., 0., 640., 480.)
