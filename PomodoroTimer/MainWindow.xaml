@@ -34,6 +34,10 @@
                            Fill="#FFD166" Canvas.Bottom="0" Visibility="Collapsed"
                            AutomationProperties.Name="Configured work limit" />
 
+                <Rectangle x:Name="SnoozeLimitMarker" Width="4" Height="30"
+                           Fill="#FF8FCB" Canvas.Bottom="0" Visibility="Collapsed"
+                           AutomationProperties.Name="Snooze endpoint" />
+
                 <StackPanel Orientation="Horizontal" Canvas.Left="-12.5" Canvas.Bottom="30">
                     <Label FontSize="10" Foreground="White" Width="25" HorizontalContentAlignment="Center" Name="firstMinute">123</Label>
                     <Label FontSize="8" Foreground="White" Width="25" VerticalContentAlignment="Bottom" HorizontalContentAlignment="Center" Name="secondMinute">123</Label>

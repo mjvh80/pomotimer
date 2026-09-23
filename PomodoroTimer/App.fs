@@ -240,10 +240,47 @@ let updateSnoozeMenu() =
    snoozeMenuItem.Header <- $"Snooze ({preferences.SnoozeMinutes} min)"
    snoozeMenuItem.IsEnabled <- canSnooze()
 
+let mutable snoozeEndpoint: TimeSpan option = None
+let mutable minutes = 0
+let updateTimeline() =
+   let parts = getTimelineParts window |> Seq.toArray
+   let panel = parts[0].Parent :?> StackPanel
+   let rulerLimit = max workSlotInMinutes (pausePreview |> Option.map (fun preview -> preview.WorkMinutes) |> Option.defaultValue 0)
+   let rulerLimit = max (float rulerLimit) (snoozeEndpoint |> Option.map (fun endpoint -> endpoint.TotalMinutes) |> Option.defaultValue 0.)
+   let requiredCount = max 8 (int (floor (rulerLimit / 10.)) + 1)
+   if requiredCount > parts.Length then
+      for chunkIndex in parts.Length .. requiredCount - 1 do
+         panel.Children.Add(Control(Template = parts[0].Template)) |> ignore
+   elif requiredCount < parts.Length then
+      for part in parts |> Array.skip requiredCount do
+         panel.Children.Remove(part)
+   minutes <- 0
+   for part in getTimelineParts window do
+      part.ApplyTemplate() |> ignore
+      let marker = part.Template.FindName("WorkLimitMarker", part) :?> FrameworkElement
+      marker.Visibility <- if workSlotInMinutes >= minutes && workSlotInMinutes < minutes + 10 then Visibility.Visible else Visibility.Collapsed
+      Canvas.SetLeft(marker, float ((workSlotInMinutes - minutes) * 5) - 1.)
+      marker.ToolTip <- $"Work limit: {workSlotInMinutes} minutes"
+      let snoozeMarker = part.Template.FindName("SnoozeLimitMarker", part) :?> FrameworkElement
+      snoozeMarker.Visibility <- Visibility.Collapsed
+      match snoozeEndpoint with
+      | Some endpoint when endpoint.TotalMinutes >= float minutes && endpoint.TotalMinutes < float (minutes + 10) ->
+         snoozeMarker.Visibility <- Visibility.Visible
+         Canvas.SetLeft(snoozeMarker, (endpoint.TotalMinutes - float minutes) * 5. - 1.)
+      | _ -> ()
+      (part.Template.FindName("firstMinute", part) :?> Label).Content <- string minutes
+      minutes <- minutes + 5
+      (part.Template.FindName("secondMinute", part) :?> Label).Content <- string minutes
+      minutes <- minutes + 5
+
+updateTimeline()
+
 let snooze() =
    if canSnooze() then
       let breakInfo = BreakInfo.FromDispatcherTimer(dispatcherTimer)
       workDeadline <- WorkInterval.snoozeDeadline preferences.SnoozeMinutes breakInfo.WorkTimer.Elapsed
+      snoozeEndpoint <- Some workDeadline
+      updateTimeline()
       stopBreakApproachingNotification()
       breakInfo.BreakTimer.Reset()
       breakInfo.WorkTimer.Start()
@@ -271,6 +308,8 @@ let startWork(ignoreBreak) =
 
       updateWindowIcon(0)
       workDeadline <- TimeSpan.FromMinutes(float workSlotInMinutes)
+      snoozeEndpoint <- None
+      updateTimeline()
       BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer.Restart()
 
       (scroller :?> Controls.ExtendedScrollViewer).OnRestart()
@@ -293,33 +332,6 @@ let setLockState source locked =
    updatePauseIndicator (BreakInfo.FromDispatcherTimer(dispatcherTimer).BreakTimer.Elapsed)
 
 
-// Initialize timer values in 5 minute intervals.
-let mutable minutes = 0;
-let updateTimeline() =
-   let parts = getTimelineParts window |> Seq.toArray
-   let panel = parts[0].Parent :?> StackPanel
-   let rulerLimit = max workSlotInMinutes (pausePreview |> Option.map (fun preview -> preview.WorkMinutes) |> Option.defaultValue 0)
-   let requiredCount = max 8 (rulerLimit / 10 + 1)
-   if requiredCount > parts.Length then
-      for chunkIndex in parts.Length .. requiredCount - 1 do
-         panel.Children.Add(Control(Template = parts[0].Template)) |> ignore
-   elif requiredCount < parts.Length then
-      for part in parts |> Array.skip requiredCount do
-         panel.Children.Remove(part)
-   minutes <- 0
-   for part in getTimelineParts window do
-      part.ApplyTemplate() |> ignore
-      let marker = part.Template.FindName("WorkLimitMarker", part) :?> FrameworkElement
-      marker.Visibility <- if workSlotInMinutes >= minutes && workSlotInMinutes < minutes + 10 then Visibility.Visible else Visibility.Collapsed
-      Canvas.SetLeft(marker, float ((workSlotInMinutes - minutes) * 5) - 1.)
-      marker.ToolTip <- $"Work limit: {workSlotInMinutes} minutes"
-      (part.Template.FindName("firstMinute", part) :?> Label).Content <- string minutes
-      minutes <- minutes + 5
-      (part.Template.FindName("secondMinute", part) :?> Label).Content <- string minutes
-      minutes <- minutes + 5
-
-updateTimeline()
-
 let showSettings() =
    match settingsWindow with
    | Some dialog -> dialog.Activate() |> ignore
@@ -338,6 +350,7 @@ let showSettings() =
          | Ok () ->
             if updated.WorkDurationMinutes <> workSlotInMinutes then
                workSlotInMinutes <- updated.WorkDurationMinutes
+               snoozeEndpoint <- None
                updateTimeline()
                workDeadline <- WorkInterval.deadlineAfterDurationChange workSlotInMinutes workTimer.Elapsed
             preferences <- updated
@@ -561,7 +574,10 @@ let main _ =
                         updateSnoozeMenu())
                      (fun () -> dispatcherTimer.IsEnabled)
                      (fun locked -> setLockState LockState.Keyboard locked)
-                     startBreakApproachingNotification (fun () -> countdownWindows.Windows))
+                     startBreakApproachingNotification (fun () -> countdownWindows.Windows)
+                     (fun endpoint ->
+                        snoozeEndpoint <- endpoint
+                        updateTimeline()))
          with error ->
             Console.Error.WriteLine(error)
             application.Shutdown(1))

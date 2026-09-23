@@ -74,6 +74,9 @@ Longer intervals extend it; expiry still uses the configured duration independen
 A gold tick marks the configured work limit and scrolls with the ruler; the white
 triangle remains the current-position indicator. The gold tick updates when the
 work duration changes, but stays at the configured limit when you snooze.
+A pink tick marks the active snooze endpoint. Further snoozes move the pink tick;
+Restart, a qualifying break, or a work-duration change clears it. The ruler extends
+as needed to include the snooze endpoint.
 
 **Timer size** scales the tomato window and its timeline from 50% to 200% in
 5% steps, with 100% as the default. Countdown windows, menus, and the settings

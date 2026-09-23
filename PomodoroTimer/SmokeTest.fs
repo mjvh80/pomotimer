@@ -444,9 +444,25 @@ let private checkDisplayChanges createCountdown =
     manager.Refresh()
     check (manager.Windows.Length = 0 && createdCount = closedCount) "Shutdown or a queued refresh leaked countdown windows."
 
-let checkSnooze (window: Window) (workTimer: Stopwatch) snoozeMinutes getDeadline prepareDeadline isUpdating setKeyboardLocked startNotification (getCountdowns: unit -> Window array) =
+let checkSnooze (window: Window) (workTimer: Stopwatch) snoozeMinutes getDeadline prepareDeadline isUpdating setKeyboardLocked startNotification (getCountdowns: unit -> Window array) previewEndpoint =
     let menu = window.FindName("SnoozeMenuItem") :?> MenuItem
     let click() = menu.RaiseEvent(RoutedEventArgs(MenuItem.ClickEvent))
+    let checkMarker expected =
+        let firstPart = window.FindName("firstTimelinePart") :?> Control
+        let panel = firstPart.Parent :?> StackPanel
+        let positions =
+            panel.Children |> Seq.cast<UIElement>
+            |> Seq.choose (function :? Control as part -> Some part | _ -> None)
+            |> Seq.mapi (fun index part ->
+                let marker = part.Template.FindName("SnoozeLimitMarker", part) :?> FrameworkElement
+                marker, float (index * 50) + Canvas.GetLeft(marker) + 1.)
+            |> Seq.filter (fun (marker, _) -> marker.Visibility = Visibility.Visible)
+            |> Seq.map snd |> Seq.toArray
+        match expected with
+        | Some (deadline: TimeSpan) ->
+            check (positions.Length = 1 && abs (positions[0] - deadline.TotalMinutes * 5.) < 0.001) "Snooze marker did not match the exact deadline."
+        | None -> check (positions.Length = 0) "Inactive snooze left a pink marker."
+    checkMarker None
     let originalDeadline = getDeadline()
     click()
     check (getDeadline() = originalDeadline) "Snooze changed an interval before its warning."
@@ -459,6 +475,8 @@ let checkSnooze (window: Window) (workTimer: Stopwatch) snoozeMinutes getDeadlin
     click()
     let expectedDeadline = beforeSnooze + TimeSpan.FromMinutes(float snoozeMinutes)
     check (getDeadline() = expectedDeadline) "Snooze did not use the configured interval from now."
+    checkMarker (Some expectedDeadline)
+    checkWorkLimitMarker window Settings.defaultDuration
     check (workTimer.Elapsed >= beforeSnooze && workTimer.IsRunning) "Snooze reset elapsed time."
     check (isUpdating()) "Snooze did not resume updates."
     check (warningWindows |> Array.forall (fun countdown -> not countdown.IsVisible)) "Snooze left warning windows visible."
@@ -473,6 +491,7 @@ let checkSnooze (window: Window) (workTimer: Stopwatch) snoozeMinutes getDeadlin
     click()
     check (getDeadline() = expiredElapsed + TimeSpan.FromMinutes(float snoozeMinutes)) "Expired timer was not snoozed from now."
     check (isUpdating()) "Expired timer did not resume after Snooze."
+    checkMarker (Some (getDeadline()))
 
     setKeyboardLocked true
     prepareDeadline (workTimer.Elapsed - TimeSpan.FromSeconds(1.))
@@ -482,6 +501,21 @@ let checkSnooze (window: Window) (workTimer: Stopwatch) snoozeMinutes getDeadlin
     check (getDeadline() = lockedDeadline && not (isUpdating())) "Snooze bypassed the keyboard lock."
     setKeyboardLocked false
     (window.FindName("RestartMenuItem") :?> MenuItem).RaiseEvent(RoutedEventArgs(MenuItem.ClickEvent))
+    checkMarker None
+    for endpoint in [TimeSpan.FromMinutes(80.); TimeSpan.FromMinutes(245.5)] do
+        previewEndpoint (Some endpoint)
+        checkMarker (Some endpoint)
+        checkWorkLimitMarker window Settings.defaultDuration
+    let scroller = window.FindName("TimelineScroller") :?> ScrollViewer
+    let previousOffset = scroller.HorizontalOffset
+    try
+        previewEndpoint (Some (TimeSpan.FromMinutes(45.)))
+        scroller.ScrollToHorizontalOffset(200.)
+        captureWindow window "snooze-endpoint-smoke-test.png"
+    finally
+        previewEndpoint None
+        scroller.ScrollToHorizontalOffset(previousOffset)
+    checkMarker None
 
 let run (window: Window) (workTimer: Stopwatch) (getCountdowns: unit -> Window array) startNotification stopNotification settingsPath getDuration openRemoteSettings createCountdown verifySnooze =
     checkWorkDeadline()
