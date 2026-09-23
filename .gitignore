@@ -1,3 +1,19 @@
-packages/
-*/bin/*/
-*/obj/*/
+# Build and publish output
+[Bb]in/
+[Oo]bj/
+/artifacts/
+
+# Legacy NuGet package cache
+/packages/
+
+# Local IDE state
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# Test output
+[Tt]est[Rr]esults/
+*.trx

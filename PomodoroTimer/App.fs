@@ -12,9 +12,8 @@ open System.Windows.Interop
 open System.Windows.Controls
 open System.Windows.Media
 open System.Windows.Shell
-open FSharpx
 open Microsoft.Win32
-open FsXaml
+open System.Windows.Markup
 open System.Runtime.InteropServices
 open System.Diagnostics
 
@@ -42,19 +41,17 @@ extern [<return: MarshalAs(UnmanagedType.Bool)>] bool FlashWindowEx(FLASHWINFO& 
 
 // End Interop
 
-type Application = XAML<"Application.xaml">
-type _MainWindow = XAML<"MainWindow.xaml">
-type Icon = XAML<"Icon.xaml">
+let loadWindow resourceName =
+   let uri = Uri($"pack://application:,,,/PomodoroTimer;component/{resourceName}")
+   use stream = Application.GetResourceStream(uri).Stream
+   XamlReader.Load(stream, ParserContext(BaseUri = uri)) :?> Window
 
 type WindowsMsg = 
    | Reset = 0x0401 // rename to restart todo
    | Quit = 0x0402
 
-type MainWindow() =
-   inherit _MainWindow()
-   member this.Handle with get() = (new WindowInteropHelper(this)).Handle
-   override this.ContextRestartClick(sender, args) = SendMessage(this.Handle, WindowsMsg.Reset |> int, IntPtr.Zero, IntPtr.Zero) |> ignore
-   override this.ContextQuitClick(sender, args) = SendMessage(this.Handle, WindowsMsg.Quit |> int, IntPtr.Zero, IntPtr.Zero) |> ignore
+type Window with
+   member this.Handle = WindowInteropHelper(this).Handle
 
 // Info about break and work. WorkTimer times work done, BreakTimer times the current break.
 type BreakInfo = { WorkTimer: Stopwatch; BreakTimer: Stopwatch } with
@@ -62,25 +59,27 @@ type BreakInfo = { WorkTimer: Stopwatch; BreakTimer: Stopwatch } with
 
 // Config
 let workSlotInMinutes = 25
+let isSmokeTest = Environment.GetCommandLineArgs() |> Array.contains "--smoke-test"
 
 
 // Construct application etc.
-let window = MainWindow()
-let scroller = window.Root.FindName("TimelineScroller") :?> System.Windows.Controls.ScrollViewer
+let application = Application(ShutdownMode = ShutdownMode.OnMainWindowClose)
+let window = loadWindow "MainWindow.xaml"
+application.MainWindow <- window
+let scroller = window.FindName("TimelineScroller") :?> System.Windows.Controls.ScrollViewer
 
-let icon = new Icon()
+let icon = loadWindow "Icon.xaml"
 icon.ShowInTaskbar <- false
+icon.ShowActivated <- false
 icon.Left <- -10000. // offscreen
 icon.Show() // required for rendering to image source to work
-
-let application = new Application()
 
 // Add hook that checks for the /restart command line, and sends a Windows message to the relevant instance if found, before quitting.
 application.Startup.Add(fun (args: StartupEventArgs) ->
    (
       if args.Args.Length >= 2 then
          if (args.Args.[0] = "/restart") then
-            let targetWindow = args.Args.[1] |> Int32.Parse |> nativeint
+            let targetWindow = args.Args.[1] |> Int64.Parse |> nativeint
             let result = SendMessage(targetWindow, LanguagePrimitives.EnumToValue(WindowsMsg.Reset), IntPtr.Zero, IntPtr.Zero)
             application.Shutdown()
    )
@@ -90,8 +89,8 @@ application.Startup.Add(fun (args: StartupEventArgs) ->
 // Allow window to be moved.
 let mutable dragCoords = new Windows.Point()
 
-let getTimelineParts (window: MainWindow) = 
-   let firstPart = window.Root.FindName("firstTimelinePart") :?> Control
+let getTimelineParts (window: Window) = 
+   let firstPart = window.FindName("firstTimelinePart") :?> Control
    LogicalTreeHelper.GetChildren(firstPart.Parent) 
       |> Seq.cast<FrameworkElement>
       |> Seq.skipWhile (fun element -> not(Object.ReferenceEquals(element, firstPart)))
@@ -103,17 +102,17 @@ dispatcherTimer.Tag <- box({ WorkTimer = Stopwatch.StartNew(); BreakTimer = new 
 
 // Protect against locking out the user in case of bugs, don't lock if control is down.
 let doActualWorkStationLock() =
-   if not(Keyboard.IsKeyDown(Key.RightCtrl)) then 
+   if not isSmokeTest && not(Keyboard.IsKeyDown(Key.RightCtrl)) then
       LockWorkStation() |> ignore // todo handle somehow?
 
 // Sets the taskbar icon by rendering the Icon.xaml file to it.
 let updateWindowIcon(minutes: int) = 
    let rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(icon.Width |> int, icon.Height |> int, 96., 96., PixelFormats.Pbgra32);
    (icon.FindName("minutes") :?> Label).Content <- minutes.ToString() // fuck databinding
+   icon.UpdateLayout()
    rtb.Render(icon)
    window.Icon <- rtb
    ()
-
 
 // Take a break, stops the dispatch timer and locks the current computer.
 let takeBreak() = 
@@ -175,8 +174,8 @@ dispatcherTimer.Tick.Add(fun e ->
    // Let's give a 10s headsup by flashing the taskbar.
    let flashAfterSeconds = workSlotInMinutes * 60 - 10 |> float
    if hiresTimer.Elapsed.TotalSeconds > flashAfterSeconds then
-      let mutable info = new FLASHWINFO(window.Handle, (* flash task tray *) 2u, 50u, 200u)
-      FlashWindowEx(&info) |> ignore
+         let mutable info = new FLASHWINFO(window.Handle, (* flash task tray *) 2u, 50u, 200u)
+         FlashWindowEx(&info) |> ignore
 
    if hiresTimer.Elapsed.TotalMinutes > float(workSlotInMinutes) then
       takeBreak()
@@ -185,36 +184,41 @@ dispatcherTimer.Tick.Add(fun e ->
 startWork(true)
 
 // Always keep on top, even when everything is minimized (e.g. show desktop).
-window.Root.StateChanged.Add(fun _ ->
-   if (window.Root.WindowState = WindowState.Minimized) then
-      window.Root.WindowState <- WindowState.Normal
+window.StateChanged.Add(fun _ ->
+    if (window.WindowState = WindowState.Minimized) then
+         window.WindowState <- WindowState.Normal
 )
 
 // Set up window movement with mouse.
-window.Root.PreviewMouseDown.Add(fun e -> dragCoords <- e.GetPosition(window.Root); window.Root.CaptureMouse() |> ignore)
-window.Root.PreviewMouseUp.Add(fun _ ->  window.Root.ReleaseMouseCapture())
-window.Root.PreviewMouseMove.Add(fun e -> if Input.Mouse.LeftButton = Input.MouseButtonState.Released then
-                                                 window.Root.ReleaseMouseCapture()
-                                               else if window.Root.IsMouseCaptured then
-                                                 let p = e.GetPosition(window.Root)
-                                                 let dx, dy = p.X - dragCoords.X, p.Y - dragCoords.Y
-                                                 window.Root.Left <- window.Root.Left + dx
-                                                 window.Root.Top <- window.Root.Top + dy)
+window.PreviewMouseDown.Add(fun e -> dragCoords <- e.GetPosition(window); window.CaptureMouse() |> ignore)
+window.PreviewMouseUp.Add(fun _ ->  window.ReleaseMouseCapture())
+window.PreviewMouseMove.Add(fun eventArgs ->
+   if Mouse.LeftButton = MouseButtonState.Released then
+      window.ReleaseMouseCapture()
+   elif window.IsMouseCaptured then
+      let position = eventArgs.GetPosition(window)
+      window.Left <- window.Left + position.X - dragCoords.X
+      window.Top <- window.Top + position.Y - dragCoords.Y)
+
+(window.FindName("RestartMenuItem") :?> MenuItem).Click.Add(fun _ -> startWork true)
+(window.FindName("QuitMenuItem") :?> MenuItem).Click.Add(fun _ -> application.Shutdown())
 
 // Hook system events to respond to lock event.
-SystemEvents.SessionSwitch.Add(fun (args: SessionSwitchEventArgs) -> 
-   match args.Reason with
-   | SessionSwitchReason.SessionLock ->
-      takeBreak()
-   
-   | SessionSwitchReason.SessionLogon
-   | SessionSwitchReason.SessionUnlock ->
-      // For now, this'll get more complex prolly
-      // todo: enforce a minumum pauze interval?
-      startWork false
+let sessionSwitchHandler = SessionSwitchEventHandler(fun _ args ->
+   if not isSmokeTest then
+      window.Dispatcher.InvokeAsync(Action(fun () ->
+         match args.Reason with
+         | SessionSwitchReason.SessionLock ->
+            dispatcherTimer.Stop()
+            BreakInfo.FromDispatcherTimer(dispatcherTimer).BreakTimer.Restart()
+         | SessionSwitchReason.SessionLogon
+         | SessionSwitchReason.SessionUnlock -> startWork false
+         | _ -> ())) |> ignore)
 
-   | _ -> ()
-)
+SystemEvents.SessionSwitch.AddHandler(sessionSwitchHandler)
+application.Exit.Add(fun _ ->
+   dispatcherTimer.Stop()
+   SystemEvents.SessionSwitch.RemoveHandler(sessionSwitchHandler))
 
 // Once loaded, show taskbar icon and hook windows messages.
 window.Loaded.Add(fun _ -> 
@@ -236,24 +240,31 @@ window.Loaded.Add(fun _ ->
 
    // Add the restart command to the jumplist.
    // Initialize the jumplist. todo: add nice icon
-   let restartTask = new JumpTask()
-   restartTask.ApplicationPath <- System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName
-   restartTask.Arguments <- "/restart " + window.Handle.ToString()
-   restartTask.Title <- "Restart"
-   restartTask.Description <- "Restarts the current timer"
-   restartTask.IconResourcePath <- restartTask.ApplicationPath
-   restartTask.IconResourceIndex <- 1
+   if not isSmokeTest then
+      let restartTask = new JumpTask()
+      restartTask.ApplicationPath <- Environment.ProcessPath
+      restartTask.Arguments <- "/restart " + window.Handle.ToString()
+      restartTask.Title <- "Restart"
+      restartTask.Description <- "Restarts the current timer"
+      restartTask.IconResourcePath <- restartTask.ApplicationPath
+      restartTask.IconResourceIndex <- 1
 
-   // note: it's possible to add to an existing jumplist defined in xaml, however, items appear to disappear
-   // after use (re-rendered?)
-   let jumpList = new JumpList() // JumpList.GetJumpList(application)
-   jumpList.JumpItems.Add(restartTask)
-   JumpList.SetJumpList(application, jumpList)
-   jumpList.Apply()
-
+      let jumpList = new JumpList()
+      jumpList.JumpItems.Add(restartTask)
+      JumpList.SetJumpList(application, jumpList)
+      jumpList.Apply()
    )
 
 
 [<STAThread>]
 [<EntryPoint>]
-application.Run(window) |> ignore
+let main _ =
+   if isSmokeTest then
+      dispatcherTimer.Stop()
+      window.ContentRendered.Add(fun _ ->
+         try
+            SmokeTest.run window (BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer)
+         with error ->
+            Console.Error.WriteLine(error)
+            application.Shutdown(1))
+   application.Run(window)

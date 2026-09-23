@@ -1,0 +1,31 @@
+param(
+    [ValidateSet('Debug', 'Release')]
+    [string] $Configuration = 'Release'
+)
+
+$ErrorActionPreference = 'Stop'
+$project = Join-Path $PSScriptRoot '../PomodoroTimer/PomodoroTimer.fsproj'
+dotnet build $project --configuration $Configuration --nologo
+if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
+
+$outputDirectory = Join-Path $PSScriptRoot "../PomodoroTimer/bin/$Configuration/net10.0-windows"
+$executable = Join-Path $outputDirectory 'PomodoroTimer.exe'
+$stdout = Join-Path $outputDirectory 'smoke-test.stdout.log'
+$stderr = Join-Path $outputDirectory 'smoke-test.stderr.log'
+$process = Start-Process $executable -ArgumentList '--smoke-test' -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+try {
+    if (-not $process.WaitForExit(20000)) {
+        throw 'Smoke test did not finish within 20 seconds.'
+    }
+    $process.Refresh()
+    if ($process.ExitCode -ne 0) {
+        Get-Content $stderr
+        throw "Smoke test failed with exit code $($process.ExitCode)."
+    }
+    Write-Output 'PASS: startup, XAML resources, icon rendering, timeline, Restart, and Quit.'
+    Write-Output "Screenshot: $(Join-Path $outputDirectory 'smoke-test.png')"
+}
+finally {
+    if (-not $process.HasExited) { $process.Kill() }
+    $process.Dispose()
+}

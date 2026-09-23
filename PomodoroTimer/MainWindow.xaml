@@ -41,13 +41,13 @@
 
     <Window.ContextMenu>
         <ContextMenu>
-            <MenuItem Header="Restart" Click="ContextRestartClick">
+            <MenuItem Header="Restart" x:Name="RestartMenuItem">
                 <MenuItem.Icon>
                     <Image Source="pack://application:,,,/resources/restart.ico" />
                 </MenuItem.Icon>
             </MenuItem>
             <Separator />
-            <MenuItem Header="Quit" Click="ContextQuitClick">
+            <MenuItem Header="Quit" x:Name="QuitMenuItem">
                 <MenuItem.Icon>
                     <Image Source="pack://application:,,,/resources/quit.ico" />
                 </MenuItem.Icon>
@@ -145,9 +145,9 @@ TriangleIndices="0 1 11  1 12 11  1 2 12  2 13 12  2 3 13  3 14 13  3 4 14  4 15
             <Polygon Canvas.Left="50" Canvas.Top="117" Points="23,6 29,6 26,2" Stroke="White" Fill="White" />
 
             <Ellipse Canvas.Left="0" Canvas.Top="0" StrokeThickness="10" Width="150" Height="150" Stroke="DarkRed">
-                <Ellipse.BitmapEffect>
-                    <BlurBitmapEffect Radius="15"  KernelType="Gaussian"/>
-                </Ellipse.BitmapEffect>
+                <Ellipse.Effect>
+                    <BlurEffect Radius="15" KernelType="Gaussian"/>
+                </Ellipse.Effect>
                 <Ellipse.Clip>
                     <!-- Remove blur from the inside of the image, by excluding an ellipse from a large rectangle. -->
                     <CombinedGeometry GeometryCombineMode="Exclude">
@@ -166,9 +166,9 @@ TriangleIndices="0 1 11  1 12 11  1 2 12  2 13 12  2 3 13  3 14 13  3 4 14  4 15
                 <Ellipse.LayoutTransform>
                     <RotateTransform Angle="-35" />
                 </Ellipse.LayoutTransform>
-                <Ellipse.BitmapEffect>
-                    <BlurBitmapEffect Radius="10" />
-                </Ellipse.BitmapEffect>
+                <Ellipse.Effect>
+                    <BlurEffect Radius="10" />
+                </Ellipse.Effect>
             </Ellipse>
         </Canvas>
     </Border>
