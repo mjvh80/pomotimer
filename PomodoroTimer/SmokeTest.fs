@@ -6,14 +6,16 @@ open System.IO
 open System.Windows
 open System.Windows.Controls
 open System.Windows.Media
+open System.Windows.Media.Animation
 open System.Windows.Media.Imaging
 
 let private check condition message =
     if not condition then failwith message
 
-let run (window: Window) (workTimer: Stopwatch) =
+let run (window: Window) (workTimer: Stopwatch) (countdowns: Window array) startNotification stopNotification =
     check (window.IsVisible && window.ActualWidth > 0.) "Main window did not open."
     check (window.Icon <> null) "Taskbar icon was not rendered."
+    check (countdowns.Length > 0) "No display was detected."
 
     let restart = window.FindName("RestartMenuItem") :?> MenuItem
     let quit = window.FindName("QuitMenuItem") :?> MenuItem
@@ -25,11 +27,23 @@ let run (window: Window) (workTimer: Stopwatch) =
     let firstMinute = firstPart.Template.FindName("firstMinute", firstPart) :?> Label
     check (string firstMinute.Content = "0") "Timeline labels were not initialized."
 
+    startNotification()
+    for countdown in countdowns do
+        check countdown.IsVisible "Countdown window did not open."
+        let text = countdown.FindName("TimesUpTimerText") :?> TextBlock
+        let animation = text.FindResource("Animation") :?> Storyboard
+        animation.SeekAlignedToLastTick(countdown, TimeSpan.FromSeconds(1.), TimeSeekOrigin.BeginTime)
+        check (text.Text = "8") "Countdown animation did not advance."
+    stopNotification()
+    check (countdowns |> Array.forall (fun countdown -> not countdown.IsVisible)) "Countdown did not hide."
+
+    startNotification()
     workTimer.Stop()
     let elapsedBeforeRestart = workTimer.Elapsed
     restart.RaiseEvent(RoutedEventArgs(MenuItem.ClickEvent))
     check workTimer.IsRunning "Restart did not start the work timer."
     check (workTimer.Elapsed < elapsedBeforeRestart) "Restart did not reset elapsed work time."
+    check (countdowns |> Array.forall (fun countdown -> not countdown.IsVisible)) "Restart did not clear the notification."
 
     window.UpdateLayout()
     let bitmap = RenderTargetBitmap(int window.ActualWidth, int window.ActualHeight, 96., 96., PixelFormats.Pbgra32)

@@ -41,6 +41,7 @@
 
     <Window.ContextMenu>
         <ContextMenu>
+            <MenuItem Header="Snooze" IsEnabled="False" />
             <MenuItem Header="Restart" x:Name="RestartMenuItem">
                 <MenuItem.Icon>
                     <Image Source="pack://application:,,,/resources/restart.ico" />

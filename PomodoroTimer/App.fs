@@ -11,6 +11,7 @@ open System.Windows.Input
 open System.Windows.Interop
 open System.Windows.Controls
 open System.Windows.Media
+open System.Windows.Media.Animation
 open System.Windows.Shell
 open Microsoft.Win32
 open System.Windows.Markup
@@ -47,8 +48,9 @@ let loadWindow resourceName =
    XamlReader.Load(stream, ParserContext(BaseUri = uri)) :?> Window
 
 type WindowsMsg = 
-   | Reset = 0x0401 // rename to restart todo
+   | Restart = 0x0401
    | Quit = 0x0402
+   | Snooze = 0x0403
 
 type Window with
    member this.Handle = WindowInteropHelper(this).Handle
@@ -58,7 +60,7 @@ type BreakInfo = { WorkTimer: Stopwatch; BreakTimer: Stopwatch } with
    static member FromDispatcherTimer(timer: System.Windows.Threading.DispatcherTimer) = timer.Tag :?> BreakInfo
 
 // Config
-let workSlotInMinutes = 25
+let workSlotInMinutes = 40
 let isSmokeTest = Environment.GetCommandLineArgs() |> Array.contains "--smoke-test"
 
 
@@ -80,7 +82,7 @@ application.Startup.Add(fun (args: StartupEventArgs) ->
       if args.Args.Length >= 2 then
          if (args.Args.[0] = "/restart") then
             let targetWindow = args.Args.[1] |> Int64.Parse |> nativeint
-            let result = SendMessage(targetWindow, LanguagePrimitives.EnumToValue(WindowsMsg.Reset), IntPtr.Zero, IntPtr.Zero)
+            let result = SendMessage(targetWindow, LanguagePrimitives.EnumToValue(WindowsMsg.Restart), IntPtr.Zero, IntPtr.Zero)
             application.Shutdown()
    )
 )
@@ -114,6 +116,51 @@ let updateWindowIcon(minutes: int) =
    window.Icon <- rtb
    ()
 
+// Create "time's up timers" (counters that display when time's up).
+let timesUpTimerWindows =
+    WpfScreenHelper.Screen.AllScreens
+    |> Seq.map (fun screen ->
+         let countdown = loadWindow "TimesUpTimer.xaml"
+         countdown.ShowActivated <- true
+         countdown.ShowInTaskbar <- false
+         countdown.Left <- screen.Bounds.Left + (screen.Bounds.Width - countdown.Width) / 2.0
+         countdown.Top <- screen.Bounds.Top + (screen.Bounds.Height - countdown.Height) / 2.0
+         countdown)
+    |> Seq.toArray
+
+let showTimesUpTimers() =
+    for countdown in timesUpTimerWindows do
+         countdown.Show()
+         let text = countdown.FindName("TimesUpTimerText") :?> FrameworkElement
+         (text.FindResource("Animation") :?> Storyboard).Begin(countdown, true)
+         countdown.Activate() |> ignore
+
+let hideTimesUpTimers() =
+    for countdown in timesUpTimerWindows do
+         let text = countdown.FindName("TimesUpTimerText") :?> FrameworkElement
+         (text.FindResource("Animation") :?> Storyboard).Remove(countdown)
+         countdown.Hide()
+
+let mutable showingBreakApproachingNotification = false
+
+let startBreakApproachingNotification() =
+    if not showingBreakApproachingNotification then
+        showingBreakApproachingNotification <- true
+        let mutable info = new FLASHWINFO(window.Handle, (* flash task tray *) 2u, 50u, 200u)
+        FlashWindowEx(&info) |> ignore
+
+        // Note: the following shows an animation starting at 9, not fully accurate but will suffice
+        showTimesUpTimers()
+
+let stopBreakApproachingNotification() = 
+  if showingBreakApproachingNotification then
+    showingBreakApproachingNotification <- false
+    let mutable info = new FLASHWINFO(window.Handle, (* stop flashing *) 0u, 0u, 0u)
+    FlashWindowEx(&info) |> ignore
+    hideTimesUpTimers()
+
+let snooze() = ()
+
 // Take a break, stops the dispatch timer and locks the current computer.
 let takeBreak() = 
    dispatcherTimer.Stop()
@@ -132,8 +179,7 @@ let startWork(ignoreBreak) =
       // break is too short, so we don't touch the timer
       ()
    else
-      let mutable info = new FLASHWINFO(window.Handle, (* stop flashing *) 0u, 0u, 0u)
-      FlashWindowEx(&info) |> ignore
+      stopBreakApproachingNotification()
 
       updateWindowIcon(0)
       BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer.Restart()
@@ -174,8 +220,7 @@ dispatcherTimer.Tick.Add(fun e ->
    // Let's give a 10s headsup by flashing the taskbar.
    let flashAfterSeconds = workSlotInMinutes * 60 - 10 |> float
    if hiresTimer.Elapsed.TotalSeconds > flashAfterSeconds then
-         let mutable info = new FLASHWINFO(window.Handle, (* flash task tray *) 2u, 50u, 200u)
-         FlashWindowEx(&info) |> ignore
+      startBreakApproachingNotification()
 
    if hiresTimer.Elapsed.TotalMinutes > float(workSlotInMinutes) then
       takeBreak()
@@ -232,7 +277,7 @@ window.Loaded.Add(fun _ ->
       handled <- true
 
       match LanguagePrimitives.EnumOfValue<int, WindowsMsg>(msg) with
-      | WindowsMsg.Reset -> startWork true
+      | WindowsMsg.Restart -> startWork true
       | WindowsMsg.Quit -> application.Shutdown()
       | _ -> handled <- false
    
@@ -264,6 +309,7 @@ let main _ =
       window.ContentRendered.Add(fun _ ->
          try
             SmokeTest.run window (BreakInfo.FromDispatcherTimer(dispatcherTimer).WorkTimer)
+               timesUpTimerWindows startBreakApproachingNotification stopBreakApproachingNotification
          with error ->
             Console.Error.WriteLine(error)
             application.Shutdown(1))

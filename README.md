@@ -2,12 +2,12 @@
 
 A simple "pomodoro" timer with some logic that suits my needs.
 
-* Work intervals are currently 25 minutes, followed by a break of at least 5 minutes.
+* Work intervals are currently 40 minutes, followed by a break of at least 5 minutes.
 * Unlocking or logging on resets the work timer after a sufficiently long break; shorter breaks keep the elapsed work time.
-* The taskbar icon flashes shortly before expiry, then the workstation locks.
+* A countdown appears on each display shortly before expiry, then the workstation locks.
 * Holding right Ctrl when the timer expires prevents the lock.
 * The timer stays on top, including when all windows are minimized.
-* Right-click for Restart or Quit.
+* Right-click for Restart or Quit. The unfinished Snooze command is disabled.
 
 ## Requirements
 
@@ -40,12 +40,12 @@ Run the bounded UI smoke test from an interactive Windows desktop:
 ./scripts/Smoke-Test.ps1
 ```
 
-It builds Release, briefly opens the timer, verifies resource loading,
-timeline labels, Restart/Quit, and nonblank rendering, then exits.
+It builds Release, briefly opens the timer and countdowns, verifies resource loading,
+timeline labels, countdown animation, Restart/Quit, and nonblank rendering, then exits.
 Workstation locking and jump-list changes are disabled in this mode.
 A screenshot and logs are written alongside the executable. The script terminates
-the test if it exceeds 20 seconds. Actual session lock/unlock still requires manual
-verification.
+the test if it exceeds 20 seconds. Actual session lock/unlock and mixed-DPI display
+placement still require manual verification.
 
 ## Publish
 
@@ -62,7 +62,8 @@ Run `artifacts/win-x64/PomodoroTimer.exe`. Distribute the entire output folder.
 NuGet restores dependencies automatically. The old `packages/` directory is no
 longer needed. FSharpx, FSharp.ViewModule, and FsXaml are no longer referenced;
 WPF's built-in XAML loader loads the embedded views. FSharp.Core is supplied by the
-SDK. Resolved versions are recorded in [packages.lock.json](PomodoroTimer/packages.lock.json).
+SDK, and WpfScreenHelper 2.1.1 provides display information. Resolved versions are
+recorded in [packages.lock.json](PomodoroTimer/packages.lock.json).
 
 The legacy [App.config](PomodoroTimer/App.config), [packages.config](PomodoroTimer/packages.config),
 and [Application.xaml](PomodoroTimer/Application.xaml) remain on disk for reference,

@@ -22,7 +22,7 @@ try {
         Get-Content $stderr
         throw "Smoke test failed with exit code $($process.ExitCode)."
     }
-    Write-Output 'PASS: startup, XAML resources, icon rendering, timeline, Restart, and Quit.'
+    Write-Output 'PASS: startup, XAML resources, icon rendering, timeline, countdown, Restart, and Quit.'
     Write-Output "Screenshot: $(Join-Path $outputDirectory 'smoke-test.png')"
 }
 finally {

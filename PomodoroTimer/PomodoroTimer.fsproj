@@ -21,5 +21,9 @@
     <Resource Include="Icon.xaml" />
     <Resource Include="resources\restart.ico" />
     <Resource Include="resources\quit.ico" />
+    <Resource Include="TimesUpTimer.xaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="WpfScreenHelper" Version="2.1.1" />
   </ItemGroup>
 </Project>
